@@ -90,7 +90,8 @@ class Network:
 
         # Query current TensorFlow device.
         with tfutil.absolute_name_scope(scope), tf.control_dependencies(None):
-            device = tf.no_op(name="_QueryDevice").device
+            #device = tf.no_op(name="_QueryDevice").device
+            device = "CPU"
 
         # Immutable state.
         self._name                  = name
@@ -138,14 +139,16 @@ class Network:
 
         # Override scope and device, and ignore surrounding control dependencies.
         with tfutil.absolute_variable_scope(self.scope, reuse=False), tfutil.absolute_name_scope(self.scope), tf.device(self.device), tf.control_dependencies(None):
-            assert tf.get_variable_scope().name == self.scope
-            assert tf.get_default_graph().get_name_scope() == self.scope
+            assert tf.compat.v1.get_variable_scope().name == self.scope
+            print(tf.compat.v1.get_default_graph().get_name_scope())
+            print(self.scope)
+            #assert tf.compat.v1.get_default_graph().get_name_scope() == self.scope
 
             # Create input templates.
             self._input_templates = []
             for param in inspect.signature(self._build_func).parameters.values():
                 if param.kind == param.POSITIONAL_OR_KEYWORD and param.default is param.empty:
-                    self._input_templates.append(tf.placeholder(tf.float32, name=param.name))
+                    self._input_templates.append(tf.compat.v1.placeholder(tf.float32, name=param.name))
 
             # Call build func.
             out_expr = self._build_func(*self._input_templates, **build_kwargs)
@@ -153,7 +156,7 @@ class Network:
         # Collect output templates and variables.
         assert tfutil.is_tf_expression(out_expr) or isinstance(out_expr, tuple)
         self._output_templates = [out_expr] if tfutil.is_tf_expression(out_expr) else list(out_expr)
-        self._own_vars = OrderedDict((var.name[len(self.scope) + 1:].split(":")[0], var) for var in tf.global_variables(self.scope + "/"))
+        self._own_vars = OrderedDict((var.name[len(self.scope) + 1:].split(":")[0], var) for var in tf.compat.v1.global_variables(self.scope + "/"))
 
         # Check for errors.
         if len(self._input_templates) == 0:
@@ -356,15 +359,15 @@ class Network:
         build_kwargs["components"] = self._components
 
         # Build TensorFlow graph to evaluate the network.
-        with tfutil.absolute_variable_scope(self.scope, reuse=True), tf.name_scope(self.name):
-            assert tf.get_variable_scope().name == self.scope
+        with tfutil.absolute_variable_scope(self.scope, reuse=True), tf.compat.v1.name_scope(self.name):
+            assert tf.compat.v1.get_variable_scope().name == self.scope
             valid_inputs = [expr for expr in in_expr if expr is not None]
             final_inputs = []
             for expr, name, shape in zip(in_expr, self.input_names, self.input_shapes):
                 if expr is not None:
                     expr = tf.identity(expr, name=name)
                 else:
-                    expr = tf.zeros([tf.shape(valid_inputs[0])[0]] + shape[1:], name=name)
+                    expr = tf.zeros([tf.shape(input=valid_inputs[0])[0]] + shape[1:], name=name)
                 final_inputs.append(expr)
             out_expr = self._build_func(*final_inputs, **build_kwargs)
 
@@ -586,7 +589,7 @@ class Network:
         if key not in self._run_cache:
             with tfutil.absolute_name_scope(self.scope + "/_Run"), tf.control_dependencies(None):
                 with tf.device("/cpu:0"):
-                    in_expr = [tf.placeholder(tf.float32, name=name) for name in self.input_names]
+                    in_expr = [tf.compat.v1.placeholder(tf.float32, name=name) for name in self.input_names]
                     in_split = list(zip(*[tf.split(x, num_gpus) for x in in_expr]))
 
                 out_split = []
@@ -626,7 +629,7 @@ class Network:
             mb_end = min(mb_begin + minibatch_size, num_items)
             mb_num = mb_end - mb_begin
             mb_in = [src[mb_begin : mb_end] if src is not None else np.zeros([mb_num] + shape[1:]) for src, shape in zip(in_arrays, self.input_shapes)]
-            mb_out = tf.get_default_session().run(out_expr, dict(zip(in_expr, mb_in)))
+            mb_out = tf.compat.v1.get_default_session().run(out_expr, dict(zip(in_expr, mb_in)))
 
             for dst, src in zip(out_arrays, mb_out):
                 dst[mb_begin: mb_end] = src
@@ -643,7 +646,7 @@ class Network:
         _ = self.output_templates  # ensure that the template graph has been created
         include_prefix = self.scope + "/"
         exclude_prefix = include_prefix + "_"
-        ops = tf.get_default_graph().get_operations()
+        ops = tf.compat.v1.get_default_graph().get_operations()
         ops = [op for op in ops if op.name.startswith(include_prefix)]
         ops = [op for op in ops if not op.name.startswith(exclude_prefix)]
         return ops
@@ -736,7 +739,7 @@ class Network:
                 else:
                     name = title + "_toplevel/" + local_name
 
-                tf.summary.histogram(name, var)
+                tf.compat.v1.summary.histogram(name, var)
 
 #----------------------------------------------------------------------------
 # Backwards-compatible emulation of legacy output transformation in Network.run().
@@ -772,7 +775,7 @@ def _legacy_output_transform_func(*expr, out_mul=1.0, out_add=0.0, out_shrink=1,
 
     if out_shrink > 1:
         ksize = [1, 1, out_shrink, out_shrink]
-        expr = [tf.nn.avg_pool(x, ksize=ksize, strides=ksize, padding="VALID", data_format="NCHW") for x in expr]
+        expr = [tf.nn.avg_pool2d(input=x, ksize=ksize, strides=ksize, padding="VALID", data_format="NCHW") for x in expr]
 
     if out_dtype is not None:
         if tf.as_dtype(out_dtype).is_integer:

@@ -55,7 +55,7 @@ class Optimizer:
         self.learning_rate          = learning_rate
         self.minibatch_multiplier   = minibatch_multiplier
         self.id                     = self.name.replace("/", ".")
-        self.scope                  = tf.get_default_graph().unique_name(self.id)
+        self.scope                  = tf.compat.v1.get_default_graph().unique_name(self.id)
         self.optimizer_class        = util.get_obj_by_name(tf_optimizer)
         self.optimizer_kwargs       = dict(kwargs)
         self.use_loss_scaling       = use_loss_scaling
@@ -136,15 +136,15 @@ class Optimizer:
         if self._report_mem_usage:
             self._report_mem_usage = False
             try:
-                with tf.name_scope(self.id + '_mem'), tf.device(device.name), tf.control_dependencies([loss]):
+                with tf.compat.v1.name_scope(self.id + '_mem'), tf.device(device.name), tf.control_dependencies([loss]):
                     deps.append(autosummary.autosummary(self.id + "/mem_usage_gb", tf.contrib.memory_stats.BytesInUse() / 2**30))
             except tf.errors.NotFoundError:
                 pass
 
         # Compute gradients.
-        with tf.name_scope(self.id + "_grad"), tf.device(device.name), tf.control_dependencies(deps):
+        with tf.compat.v1.name_scope(self.id + "_grad"), tf.device(device.name), tf.control_dependencies(deps):
             loss = self.apply_loss_scaling(tf.cast(loss, tf.float32))
-            gate = tf.train.Optimizer.GATE_NONE  # disable gating to reduce memory usage
+            gate = tf.compat.v1.train.Optimizer.GATE_NONE  # disable gating to reduce memory usage
             grad_list = device.optimizer.compute_gradients(loss=loss, var_list=trainable_vars, gate_gradients=gate)
 
         # Register gradients.
@@ -195,7 +195,7 @@ class Optimizer:
             with tfutil.absolute_name_scope(self.scope + "/Broadcast"), tf.device(None):
                 if platform.system() == "Windows":    # Windows => NCCL ops are not available.
                     self._broadcast_fallback()
-                elif tf.VERSION.startswith("1.15."):  # TF 1.15 => NCCL ops are broken: https://github.com/tensorflow/tensorflow/issues/41539
+                elif tf.version.VERSION.startswith("1.15."):  # TF 1.15 => NCCL ops are broken: https://github.com/tensorflow/tensorflow/issues/41539
                     self._broadcast_fallback()
                 else:                                 # Otherwise => NCCL ops are safe to use.
                     self._broadcast_nccl()
@@ -218,10 +218,10 @@ class Optimizer:
 
                     # Track counter.
                     count_cur = device.grad_acc_count + 1.0
-                    count_inc_op = lambda: tf.assign(device.grad_acc_count, count_cur)
-                    count_reset_op = lambda: tf.assign(device.grad_acc_count, tf.zeros([]))
+                    count_inc_op = lambda: tf.compat.v1.assign(device.grad_acc_count, count_cur)
+                    count_reset_op = lambda: tf.compat.v1.assign(device.grad_acc_count, tf.zeros([]))
                     acc_ok = (count_cur >= tf.cast(self.minibatch_multiplier, tf.float32))
-                    all_ops.append(tf.cond(acc_ok, count_reset_op, count_inc_op))
+                    all_ops.append(tf.cond(pred=acc_ok, true_fn=count_reset_op, false_fn=count_inc_op))
 
                     # Track gradients.
                     for var, grad in device.grad_clean.items():
@@ -229,26 +229,26 @@ class Optimizer:
                         acc_cur = acc_var + grad
                         device.grad_acc[var] = acc_cur
                         with tf.control_dependencies([acc_cur]):
-                            acc_inc_op = lambda: tf.assign(acc_var, acc_cur)
-                            acc_reset_op = lambda: tf.assign(acc_var, tf.zeros(var.shape))
-                            all_ops.append(tf.cond(acc_ok, acc_reset_op, acc_inc_op))
+                            acc_inc_op = lambda: tf.compat.v1.assign(acc_var, acc_cur)
+                            acc_reset_op = lambda: tf.compat.v1.assign(acc_var, tf.zeros(var.shape))
+                            all_ops.append(tf.cond(pred=acc_ok, true_fn=acc_reset_op, false_fn=acc_inc_op))
 
                 # No overflow => apply gradients.
-                all_ok = tf.reduce_all(tf.stack([acc_ok] + [tf.reduce_all(tf.is_finite(g)) for g in device.grad_acc.values()]))
+                all_ok = tf.reduce_all(input_tensor=tf.stack([acc_ok] + [tf.reduce_all(input_tensor=tf.math.is_finite(g)) for g in device.grad_acc.values()]))
                 apply_op = lambda: device.optimizer.apply_gradients([(tf.cast(grad, var.dtype), var) for var, grad in device.grad_acc.items()])
-                all_ops.append(tf.cond(all_ok, apply_op, tf.no_op))
+                all_ops.append(tf.cond(pred=all_ok, true_fn=apply_op, false_fn=tf.no_op))
 
                 # Adjust loss scaling.
                 if self.use_loss_scaling:
-                    ls_inc_op = lambda: tf.assign_add(device.loss_scaling_var, self.loss_scaling_inc)
-                    ls_dec_op = lambda: tf.assign_sub(device.loss_scaling_var, self.loss_scaling_dec)
-                    ls_update_op = lambda: tf.group(tf.cond(all_ok, ls_inc_op, ls_dec_op))
-                    all_ops.append(tf.cond(acc_ok, ls_update_op, tf.no_op))
+                    ls_inc_op = lambda: tf.compat.v1.assign_add(device.loss_scaling_var, self.loss_scaling_inc)
+                    ls_dec_op = lambda: tf.compat.v1.assign_sub(device.loss_scaling_var, self.loss_scaling_dec)
+                    ls_update_op = lambda: tf.group(tf.cond(pred=all_ok, true_fn=ls_inc_op, false_fn=ls_dec_op))
+                    all_ops.append(tf.cond(pred=acc_ok, true_fn=ls_update_op, false_fn=tf.no_op))
 
                 # Last device => report statistics.
                 if device_idx == len(self._devices) - 1:
-                    all_ops.append(autosummary.autosummary(self.id + "/learning_rate", tf.convert_to_tensor(self.learning_rate)))
-                    all_ops.append(autosummary.autosummary(self.id + "/overflow_frequency", tf.where(all_ok, 0, 1), condition=acc_ok))
+                    all_ops.append(autosummary.autosummary(self.id + "/learning_rate", tf.convert_to_tensor(value=self.learning_rate)))
+                    all_ops.append(autosummary.autosummary(self.id + "/overflow_frequency", tf.compat.v1.where(all_ok, 0, 1), condition=acc_ok))
                     if self.use_loss_scaling:
                         all_ops.append(autosummary.autosummary(self.id + "/loss_scaling_log2", device.loss_scaling_var))
 
@@ -338,11 +338,11 @@ class SimpleAdam:
         return self.all_state_vars
 
     def compute_gradients(self, loss, var_list, gate_gradients=tf.compat.v1.train.Optimizer.GATE_NONE):
-        assert gate_gradients == tf.train.Optimizer.GATE_NONE
-        return list(zip(tf.gradients(loss, var_list), var_list))
+        assert gate_gradients == tf.compat.v1.train.Optimizer.GATE_NONE
+        return list(zip(tf.gradients(ys=loss, xs=var_list), var_list))
 
     def apply_gradients(self, grads_and_vars):
-        with tf.name_scope(self.name):
+        with tf.compat.v1.name_scope(self.name):
             state_vars = []
             update_ops = []
 
@@ -353,7 +353,7 @@ class SimpleAdam:
                 state_vars += [b1pow_var, b2pow_var]
             b1pow_new = b1pow_var * self.beta1
             b2pow_new = b2pow_var * self.beta2
-            update_ops += [tf.assign(b1pow_var, b1pow_new), tf.assign(b2pow_var, b2pow_new)]
+            update_ops += [tf.compat.v1.assign(b1pow_var, b1pow_new), tf.compat.v1.assign(b2pow_var, b2pow_new)]
             lr_new = self.learning_rate * tf.sqrt(1 - b2pow_new) / (1 - b1pow_new)
 
             # Construct ops to update each variable.
@@ -365,7 +365,7 @@ class SimpleAdam:
                 m_new = self.beta1 * m_var + (1 - self.beta1) * grad
                 v_new = self.beta2 * v_var + (1 - self.beta2) * tf.square(grad)
                 var_delta = lr_new * m_new / (tf.sqrt(v_new) + self.epsilon)
-                update_ops += [tf.assign(m_var, m_new), tf.assign(v_var, v_new), tf.assign_sub(var, var_delta)]
+                update_ops += [tf.compat.v1.assign(m_var, m_new), tf.compat.v1.assign(v_var, v_new), tf.compat.v1.assign_sub(var, var_delta)]
 
             # Group everything together.
             self.all_state_vars += state_vars

@@ -68,7 +68,7 @@ def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, 
 def _upfirdn_2d_ref(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
     """Slow reference implementation of `upfirdn_2d()` using standard TensorFlow ops."""
 
-    x = tf.convert_to_tensor(x)
+    x = tf.convert_to_tensor(value=x)
     k = np.asarray(k, dtype=np.float32)
     assert x.shape.rank == 4
     inH = x.shape[1].value
@@ -84,20 +84,20 @@ def _upfirdn_2d_ref(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
 
     # Upsample (insert zeros).
     x = tf.reshape(x, [-1, inH, 1, inW, 1, minorDim])
-    x = tf.pad(x, [[0, 0], [0, 0], [0, upy - 1], [0, 0], [0, upx - 1], [0, 0]])
+    x = tf.pad(tensor=x, paddings=[[0, 0], [0, 0], [0, upy - 1], [0, 0], [0, upx - 1], [0, 0]])
     x = tf.reshape(x, [-1, inH * upy, inW * upx, minorDim])
 
     # Pad (crop if negative).
-    x = tf.pad(x, [[0, 0], [max(pady0, 0), max(pady1, 0)], [max(padx0, 0), max(padx1, 0)], [0, 0]])
+    x = tf.pad(tensor=x, paddings=[[0, 0], [max(pady0, 0), max(pady1, 0)], [max(padx0, 0), max(padx1, 0)], [0, 0]])
     x = x[:, max(-pady0, 0) : x.shape[1].value - max(-pady1, 0), max(-padx0, 0) : x.shape[2].value - max(-padx1, 0), :]
 
     # Convolve with filter.
-    x = tf.transpose(x, [0, 3, 1, 2])
+    x = tf.transpose(a=x, perm=[0, 3, 1, 2])
     x = tf.reshape(x, [-1, 1, inH * upy + pady0 + pady1, inW * upx + padx0 + padx1])
     w = tf.constant(k[::-1, ::-1, np.newaxis, np.newaxis], dtype=x.dtype)
-    x = tf.nn.conv2d(x, w, strides=[1,1,1,1], padding='VALID', data_format='NCHW')
+    x = tf.nn.conv2d(input=x, filters=w, strides=[1,1,1,1], padding='VALID', data_format='NCHW')
     x = tf.reshape(x, [-1, minorDim, inH * upy + pady0 + pady1 - kernelH + 1, inW * upx + padx0 + padx1 - kernelW + 1])
-    x = tf.transpose(x, [0, 2, 3, 1])
+    x = tf.transpose(a=x, perm=[0, 2, 3, 1])
 
     # Downsample (throw away pixels).
     return x[:, ::downy, ::downx, :]
@@ -107,7 +107,7 @@ def _upfirdn_2d_ref(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
 def _upfirdn_2d_cuda(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
     """Fast CUDA implementation of `upfirdn_2d()` using custom ops."""
 
-    x = tf.convert_to_tensor(x)
+    x = tf.convert_to_tensor(value=x)
     k = np.asarray(k, dtype=np.float32)
     majorDim, inH, inW, minorDim = x.shape.as_list()
     kernelH, kernelW = k.shape
@@ -271,7 +271,7 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
     assert isinstance(padding, int)
 
     # Check weight shape.
-    w = tf.convert_to_tensor(w)
+    w = tf.convert_to_tensor(value=w)
     ch, cw, _inC, _outC = w.shape.as_list()
     inC = _shape(w, 2)
     outC = _shape(w, 3)
@@ -279,7 +279,7 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
 
     # Fast path for 1x1 convolution.
     if cw == 1 and ch == 1:
-        x = tf.nn.conv2d(x, w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
+        x = tf.nn.conv2d(input=x, filters=w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
         x = upsample_2d(x, k, factor=factor, gain=gain, padding=padding, data_format=data_format, impl=impl)
         return x
 
@@ -299,7 +299,7 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
 
     # Transpose weights.
     w = tf.reshape(w, [ch, cw, inC, num_groups, -1])
-    w = tf.transpose(w[::-1, ::-1], [0, 1, 4, 3, 2])
+    w = tf.transpose(a=w[::-1, ::-1], perm=[0, 1, 4, 3, 2])
     w = tf.reshape(w, [ch, cw, -1, num_groups * inC])
 
     # Execute.
@@ -338,14 +338,14 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     assert isinstance(padding, int)
 
     # Check weight shape.
-    w = tf.convert_to_tensor(w)
+    w = tf.convert_to_tensor(value=w)
     ch, cw, _inC, _outC = w.shape.as_list()
     assert cw == ch
 
     # Fast path for 1x1 convolution.
     if cw == 1 and ch == 1:
         x = downsample_2d(x, k, factor=factor, gain=gain, padding=padding, data_format=data_format, impl=impl)
-        x = tf.nn.conv2d(x, w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
+        x = tf.nn.conv2d(input=x, filters=w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
         return x
 
     # Setup filter kernel.
@@ -362,7 +362,7 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     pad0 = (k.w - factor + cw) // 2 + padding * factor
     pad1 = (k.w - factor + cw - 1) // 2 + padding * factor
     x = _simple_upfirdn_2d(x, k, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
-    return tf.nn.conv2d(x, w, strides=s, padding='VALID', data_format=data_format)
+    return tf.nn.conv2d(input=x, filters=w, strides=s, padding='VALID', data_format=data_format)
 
 #----------------------------------------------------------------------------
 # Internal helpers.
@@ -413,6 +413,6 @@ def _shape(tf_expr, dim_idx):
         dim = tf_expr.shape[dim_idx].value
         if dim is not None:
             return dim
-    return tf.shape(tf_expr)[dim_idx]
+    return tf.shape(input=tf_expr)[dim_idx]
 
 #----------------------------------------------------------------------------

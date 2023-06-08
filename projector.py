@@ -85,10 +85,10 @@ class Projector:
                 break
             v = self._Gs.vars[n]
             self._noise_vars.append(v)
-            noise_init_ops.append(tf.assign(v, tf.random_normal(tf.shape(v), dtype=tf.float32)))
-            noise_mean = tf.reduce_mean(v)
-            noise_std = tf.reduce_mean((v - noise_mean)**2)**0.5
-            noise_normalize_ops.append(tf.assign(v, (v - noise_mean) / noise_std))
+            noise_init_ops.append(tf.compat.v1.assign(v, tf.random.normal(tf.shape(input=v), dtype=tf.float32)))
+            noise_mean = tf.reduce_mean(input_tensor=v)
+            noise_std = tf.reduce_mean(input_tensor=(v - noise_mean)**2)**0.5
+            noise_normalize_ops.append(tf.compat.v1.assign(v, (v - noise_mean) / noise_std))
         self._noise_init_op = tf.group(*noise_init_ops)
         self._noise_normalize_op = tf.group(*noise_normalize_ops)
 
@@ -96,7 +96,7 @@ class Projector:
         self._info('Building image output graph...')
         self._minibatch_size = 1
         self._dlatents_var = tf.Variable(tf.zeros([self._minibatch_size] + list(self._dlatent_avg.shape[1:])), name='dlatents_var')
-        self._dlatent_noise_in = tf.placeholder(tf.float32, [], name='noise_in')
+        self._dlatent_noise_in = tf.compat.v1.placeholder(tf.float32, [], name='noise_in')
         dlatents_noise = tf.random.normal(shape=self._dlatents_var.shape) * self._dlatent_noise_in
         self._dlatents_expr = tf.tile(self._dlatents_var + dlatents_noise, [1, self._Gs.components.synthesis.input_shape[1], 1])
         self._images_float_expr = tf.cast(self._Gs.components.synthesis.get_output_for(self._dlatents_expr), tf.float32)
@@ -107,7 +107,7 @@ class Projector:
         sh = proc_images_expr.shape.as_list()
         if sh[2] > 256:
             factor = sh[2] // 256
-            proc_images_expr = tf.reduce_mean(tf.reshape(proc_images_expr, [-1, sh[1], sh[2] // factor, factor, sh[2] // factor, factor]), axis=[3,5])
+            proc_images_expr = tf.reduce_mean(input_tensor=tf.reshape(proc_images_expr, [-1, sh[1], sh[2] // factor, factor, sh[2] // factor, factor]), axis=[3,5])
 
         # Build loss graph.
         self._info('Building loss graph...')
@@ -116,7 +116,7 @@ class Projector:
             with dnnlib.util.open_url('https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada/pretrained/metrics/vgg16_zhang_perceptual.pkl') as f:
                 self._lpips = pickle.load(f)
         self._dist = self._lpips.get_output_for(proc_images_expr, self._target_images_var)
-        self._loss = tf.reduce_sum(self._dist)
+        self._loss = tf.reduce_sum(input_tensor=self._dist)
 
         # Build noise regularization graph.
         self._info('Building noise regularization graph...')
@@ -124,17 +124,17 @@ class Projector:
         for v in self._noise_vars:
             sz = v.shape[2]
             while True:
-                reg_loss += tf.reduce_mean(v * tf.roll(v, shift=1, axis=3))**2 + tf.reduce_mean(v * tf.roll(v, shift=1, axis=2))**2
+                reg_loss += tf.reduce_mean(input_tensor=v * tf.roll(v, shift=1, axis=3))**2 + tf.reduce_mean(input_tensor=v * tf.roll(v, shift=1, axis=2))**2
                 if sz <= 8:
                     break # Small enough already
                 v = tf.reshape(v, [1, 1, sz//2, 2, sz//2, 2]) # Downscale
-                v = tf.reduce_mean(v, axis=[3, 5])
+                v = tf.reduce_mean(input_tensor=v, axis=[3, 5])
                 sz = sz // 2
         self._loss += reg_loss * self.regularize_noise_weight
 
         # Setup optimizer.
         self._info('Setting up optimizer...')
-        self._lrate_in = tf.placeholder(tf.float32, [], name='lrate_in')
+        self._lrate_in = tf.compat.v1.placeholder(tf.float32, [], name='lrate_in')
         self._opt = tflib.Optimizer(learning_rate=self._lrate_in)
         self._opt.register_gradients(self._loss, [self._dlatents_var] + self._noise_vars)
         self._opt_step = self._opt.apply_updates()

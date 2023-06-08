@@ -75,8 +75,8 @@ class AdaptiveAugment:
         # Build validation graph.
         with tflib.absolute_name_scope('Validation'), tf.control_dependencies(None):
             with tf.device('/cpu:0'):
-                self._valid_images_in = tf.placeholder(training_set.dtype, name='valid_images_in', shape=[None]+training_set.shape)
-                self._valid_labels_in = tf.placeholder(training_set.label_dtype, name='valid_labels_in', shape=[None,training_set.label_size])
+                self._valid_images_in = tf.compat.v1.placeholder(training_set.dtype, name='valid_images_in', shape=[None]+training_set.shape)
+                self._valid_labels_in = tf.compat.v1.placeholder(training_set.label_dtype, name='valid_labels_in', shape=[None,training_set.label_size])
                 images_in_gpus = tf.split(self._valid_images_in, len(D_gpus))
                 labels_in_gpus = tf.split(self._valid_labels_in, len(D_gpus))
             ops = []
@@ -90,7 +90,7 @@ class AdaptiveAugment:
     def apply(self, images, labels, enable=True):
         if not enable or self.apply_func is None or (self.strength == 0 and self.tune_heuristic is None):
             return images, labels
-        with tf.name_scope('Augment'):
+        with tf.compat.v1.name_scope('Augment'):
             images, labels = self.apply_func(images, labels, strength=self.get_strength_var(), **self.apply_args)
         return images, labels
 
@@ -136,15 +136,15 @@ class AdaptiveAugment:
         self.strength = strength
 
     def _increment_acc(self, name, expr):
-        with tf.name_scope('acc_' + name):
+        with tf.compat.v1.name_scope('acc_' + name):
             with tf.control_dependencies(None):
                 acc_var = tf.Variable(tf.zeros(2), name=name, trainable=False) # [acc_num, acc_sum]
             if name not in self._acc_vars:
                 self._acc_vars[name] = []
             self._acc_vars[name].append(acc_var)
-            expr_num = tf.shape(tf.reshape(expr, [-1]))[0]
-            expr_sum = tf.reduce_sum(expr)
-            acc_op = tf.assign_add(acc_var, [expr_num, expr_sum])
+            expr_num = tf.shape(input=tf.reshape(expr, [-1]))[0]
+            expr_sum = tf.reduce_sum(input_tensor=expr)
+            acc_op = tf.compat.v1.assign_add(acc_var, [expr_num, expr_sum])
             with tf.control_dependencies([acc_op]):
                 return tf.identity(expr)
 
@@ -154,10 +154,10 @@ class AdaptiveAugment:
         if nimg_delta > 0:
             with tflib.absolute_name_scope('Augment'), tf.control_dependencies(None):
                 if self._acc_decay_in is None:
-                    self._acc_decay_in = tf.placeholder(tf.float32, name='acc_decay_in', shape=[])
+                    self._acc_decay_in = tf.compat.v1.placeholder(tf.float32, name='acc_decay_in', shape=[])
                 if name not in self._acc_decay_ops:
-                    with tf.name_scope('acc_' + name):
-                        ops = [tf.assign(var, var * self._acc_decay_in) for var in acc_vars]
+                    with tf.compat.v1.name_scope('acc_' + name):
+                        ops = [tf.compat.v1.assign(var, var * self._acc_decay_in) for var in acc_vars]
                         self._acc_decay_ops[name] = tf.group(*ops)
             acc_decay = 0.5 ** (nimg_delta / (self.stat_decay_kimg * 1000)) if self.stat_decay_kimg > 0 else 0
             tflib.run(self._acc_decay_ops[name], {self._acc_decay_in: acc_decay})
@@ -167,21 +167,21 @@ class AdaptiveAugment:
 # Helper for randomly gating augmentation parameters based on the given probability.
 
 def gate_augment_params(probability, params, disabled_val):
-    shape = tf.shape(params)
-    cond = (tf.random_uniform(shape[:1], 0, 1) < probability)
-    disabled_val = tf.broadcast_to(tf.convert_to_tensor(disabled_val, dtype=params.dtype), shape)
-    return tf.where(cond, params, disabled_val)
+    shape = tf.shape(input=params)
+    cond = (tf.random.uniform(shape[:1], 0, 1) < probability)
+    disabled_val = tf.broadcast_to(tf.convert_to_tensor(value=disabled_val, dtype=params.dtype), shape)
+    return tf.compat.v1.where(cond, params, disabled_val)
 
 #----------------------------------------------------------------------------
 # Helpers for constructing batched transformation matrices.
 
 def construct_batch_of_matrices(*rows):
-    rows = [[tf.convert_to_tensor(x, dtype=tf.float32) for x in r] for r in rows]
+    rows = [[tf.convert_to_tensor(value=x, dtype=tf.float32) for x in r] for r in rows]
     batch_elems = [x for r in rows for x in r if x.shape.rank != 0]
     assert all(x.shape.rank == 1 for x in batch_elems)
-    batch_size = tf.shape(batch_elems[0])[0] if len(batch_elems) else 1
+    batch_size = tf.shape(input=batch_elems[0])[0] if len(batch_elems) else 1
     rows = [[tf.broadcast_to(x, [batch_size]) for x in r] for r in rows]
-    return tf.transpose(rows, [2, 0, 1])
+    return tf.transpose(a=rows, perm=[2, 0, 1])
 
 def translate_2d(tx, ty):
     return construct_batch_of_matrices(
@@ -309,7 +309,7 @@ def augment_pipeline(
     # Determine input shape.
     batch, channels, height, width = images.shape.as_list()
     if batch is None:
-        batch = tf.shape(images)[0]
+        batch = tf.shape(input=images)[0]
 
     # -------------------------------------
     # Select parameters for pixel blitting.
@@ -321,7 +321,7 @@ def augment_pipeline(
 
     # Apply x-flip with probability (xflip * strength).
     if xflip > 0:
-        i = tf.floor(tf.random_uniform([batch], 0, 2))
+        i = tf.floor(tf.random.uniform([batch], 0, 2))
         i = gate_augment_params(xflip * strength, i, 0)
         if debug_percentile is not None:
             i = tf.floor(tf.broadcast_to(debug_percentile, [batch]) * 2)
@@ -329,7 +329,7 @@ def augment_pipeline(
 
     # Apply 90 degree rotations with probability (rotate90 * strength).
     if rotate90 > 0:
-        i = tf.floor(tf.random_uniform([batch], 0, 4))
+        i = tf.floor(tf.random.uniform([batch], 0, 4))
         i = gate_augment_params(rotate90 * strength, i, 0)
         if debug_percentile is not None:
             i = tf.floor(tf.broadcast_to(debug_percentile, [batch]) * 4)
@@ -337,11 +337,11 @@ def augment_pipeline(
 
     # Apply integer translation with probability (xint * strength).
     if xint > 0:
-        t = tf.random_uniform([batch, 2], -xint_max, xint_max)
+        t = tf.random.uniform([batch, 2], -xint_max, xint_max)
         t = gate_augment_params(xint * strength, t, 0)
         if debug_percentile is not None:
             t = (tf.broadcast_to(debug_percentile, [batch, 2]) * 2 - 1) * xint_max
-        G_inv @= translate_2d_inv(tf.rint(t[:,0] * width), tf.rint(t[:,1] * height))
+        G_inv @= translate_2d_inv(tf.math.rint(t[:,0] * width), tf.math.rint(t[:,1] * height))
 
     # --------------------------------------------------------
     # Select parameters for general geometric transformations.
@@ -349,7 +349,7 @@ def augment_pipeline(
 
     # Apply isotropic scaling with probability (scale * strength).
     if scale > 0:
-        s = 2 ** tf.random_normal([batch], 0, scale_std)
+        s = 2 ** tf.random.normal([batch], 0, scale_std)
         s = gate_augment_params(scale * strength, s, 1)
         if debug_percentile is not None:
             s = 2 ** (tflib.erfinv(tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * scale_std)
@@ -358,7 +358,7 @@ def augment_pipeline(
     # Apply pre-rotation with probability p_rot.
     p_rot = 1 - tf.sqrt(tf.cast(tf.maximum(1 - rotate * strength, 0), tf.float32)) # P(pre OR post) = p
     if rotate > 0:
-        theta = tf.random_uniform([batch], -np.pi * rotate_max, np.pi * rotate_max)
+        theta = tf.random.uniform([batch], -np.pi * rotate_max, np.pi * rotate_max)
         theta = gate_augment_params(p_rot, theta, 0)
         if debug_percentile is not None:
             theta = (tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * np.pi * rotate_max
@@ -366,7 +366,7 @@ def augment_pipeline(
 
     # Apply anisotropic scaling with probability (aniso * strength).
     if aniso > 0:
-        s = 2 ** tf.random_normal([batch], 0, aniso_std)
+        s = 2 ** tf.random.normal([batch], 0, aniso_std)
         s = gate_augment_params(aniso * strength, s, 1)
         if debug_percentile is not None:
             s = 2 ** (tflib.erfinv(tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * aniso_std)
@@ -374,7 +374,7 @@ def augment_pipeline(
 
     # Apply post-rotation with probability p_rot.
     if rotate > 0:
-        theta = tf.random_uniform([batch], -np.pi * rotate_max, np.pi * rotate_max)
+        theta = tf.random.uniform([batch], -np.pi * rotate_max, np.pi * rotate_max)
         theta = gate_augment_params(p_rot, theta, 0)
         if debug_percentile is not None:
             theta = tf.zeros([batch])
@@ -382,7 +382,7 @@ def augment_pipeline(
 
     # Apply fractional translation with probability (xfrac * strength).
     if xfrac > 0:
-        t = tf.random_normal([batch, 2], 0, xfrac_std)
+        t = tf.random.normal([batch, 2], 0, xfrac_std)
         t = gate_augment_params(xfrac * strength, t, 0)
         if debug_percentile is not None:
             t = tflib.erfinv(tf.broadcast_to(debug_percentile, [batch, 2]) * 2 - 1) * xfrac_std
@@ -407,13 +407,13 @@ def augment_pipeline(
         cp = np.transpose([[-cx, -cy, 1], [cx, -cy, 1], [cx, cy, 1], [-cx, cy, 1]]) # [xyz, idx]
         cp = G_inv @ cp[np.newaxis] # [batch, xyz, idx]
         cp = cp[:, :2, :] # [batch, xy, idx]
-        m_lo = tf.ceil(tf.reduce_max(-cp, axis=[0,2]) - [cx, cy] + Hz_pad * 2)
-        m_hi = tf.ceil(tf.reduce_max( cp, axis=[0,2]) - [cx, cy] + Hz_pad * 2)
+        m_lo = tf.math.ceil(tf.reduce_max(input_tensor=-cp, axis=[0,2]) - [cx, cy] + Hz_pad * 2)
+        m_hi = tf.math.ceil(tf.reduce_max( input_tensor=cp, axis=[0,2]) - [cx, cy] + Hz_pad * 2)
         m_lo = tf.clip_by_value(m_lo, [0, 0], [width-1, height-1])
         m_hi = tf.clip_by_value(m_hi, [0, 0], [width-1, height-1])
 
         # Pad image and adjust origin.
-        images = tf.transpose(images, [0, 2, 3, 1]) # NCHW => NHWC
+        images = tf.transpose(a=images, perm=[0, 2, 3, 1]) # NCHW => NHWC
         pad = [[0, 0], [m_lo[1], m_hi[1]], [m_lo[0], m_hi[0]], [0, 0]]
         images = tf.pad(tensor=images, paddings=pad, mode='REFLECT')
         T_in = translate_2d(cx + m_lo[0], cy + m_lo[1])
@@ -421,7 +421,7 @@ def augment_pipeline(
         G_inv = T_in @ G_inv @ T_out
 
         # Upsample.
-        shape = [batch, tf.shape(images)[1] * 2, tf.shape(images)[2] * 2, channels]
+        shape = [batch, tf.shape(input=images)[1] * 2, tf.shape(input=images)[2] * 2, channels]
         images = tf.nn.depthwise_conv2d_backprop_input(input_sizes=shape, filter=Hz[np.newaxis, :], out_backprop=images, strides=[1,2,2,1], padding='SAME', data_format='NHWC')
         images = tf.nn.depthwise_conv2d_backprop_input(input_sizes=shape, filter=Hz[:, np.newaxis], out_backprop=images, strides=[1,1,1,1], padding='SAME', data_format='NHWC')
         G_inv = scale_2d(2, 2) @ G_inv @ scale_2d_inv(2, 2) # Account for the increased resolution.
@@ -435,7 +435,7 @@ def augment_pipeline(
         images = tf.nn.depthwise_conv2d(input=images, filter=Hz[np.newaxis,:], strides=[1,1,1,1], padding='SAME', data_format='NHWC')
         images = tf.nn.depthwise_conv2d(input=images, filter=Hz[:,np.newaxis], strides=[1,2,2,1], padding='SAME', data_format='NHWC')
         images = images[:, Hz_pad : height + Hz_pad, Hz_pad : width + Hz_pad, :]
-        images = tf.transpose(images, [0, 3, 1, 2]) # NHWC => NCHW
+        images = tf.transpose(a=images, perm=[0, 3, 1, 2]) # NHWC => NCHW
 
     # --------------------------------------------
     # Select parameters for color transformations.
@@ -447,7 +447,7 @@ def augment_pipeline(
 
     # Apply brightness with probability (brightness * strength).
     if brightness > 0:
-        b = tf.random_normal([batch], 0, brightness_std)
+        b = tf.random.normal([batch], 0, brightness_std)
         b = gate_augment_params(brightness * strength, b, 0)
         if debug_percentile is not None:
             b = tflib.erfinv(tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * brightness_std
@@ -455,7 +455,7 @@ def augment_pipeline(
 
     # Apply contrast with probability (contrast * strength).
     if contrast > 0:
-        c = 2 ** tf.random_normal([batch], 0, contrast_std)
+        c = 2 ** tf.random.normal([batch], 0, contrast_std)
         c = gate_augment_params(contrast * strength, c, 1)
         if debug_percentile is not None:
             c = 2 ** (tflib.erfinv(tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * contrast_std)
@@ -464,7 +464,7 @@ def augment_pipeline(
     # Apply luma flip with probability (lumaflip * strength).
     v = np.array([1, 1, 1, 0]) / np.sqrt(3) # Luma axis.
     if lumaflip > 0:
-        i = tf.floor(tf.random_uniform([batch], 0, 2))
+        i = tf.floor(tf.random.uniform([batch], 0, 2))
         i = gate_augment_params(lumaflip * strength, i, 0)
         if debug_percentile is not None:
             i = tf.floor(tf.broadcast_to(debug_percentile, [batch]) * 2)
@@ -473,7 +473,7 @@ def augment_pipeline(
 
     # Apply hue rotation with probability (hue * strength).
     if hue > 0 and channels > 1:
-        theta = tf.random_uniform([batch], -np.pi * hue_max, np.pi * hue_max)
+        theta = tf.random.uniform([batch], -np.pi * hue_max, np.pi * hue_max)
         theta = gate_augment_params(hue * strength, theta, 0)
         if debug_percentile is not None:
             theta = (tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * np.pi * hue_max
@@ -481,7 +481,7 @@ def augment_pipeline(
 
     # Apply saturation with probability (saturation * strength).
     if saturation > 0 and channels > 1:
-        s = 2 ** tf.random_normal([batch], 0, saturation_std)
+        s = 2 ** tf.random.normal([batch], 0, saturation_std)
         s = gate_augment_params(saturation * strength, s, 1)
         if debug_percentile is not None:
             s = 2 ** (tflib.erfinv(tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * saturation_std)
@@ -498,8 +498,8 @@ def augment_pipeline(
         if channels == 3:
             images = C[:, :3, :3] @ images + C[:, :3, 3:]
         elif channels == 1:
-            C = tf.reduce_mean(C[:, :3, :], axis=1, keepdims=True)
-            images = images * tf.reduce_sum(C[:, :, :3], axis=2, keepdims=True) + C[:, :, 3:]
+            C = tf.reduce_mean(input_tensor=C[:, :3, :], axis=1, keepdims=True)
+            images = images * tf.reduce_sum(input_tensor=C[:, :, :3], axis=2, keepdims=True) + C[:, :, 3:]
         else:
             raise ValueError('Image must be RGB (3 channels) or L (1 channel)')
         images = tf.reshape(images, [batch, channels, height, width])
@@ -516,13 +516,13 @@ def augment_pipeline(
         # Apply amplification for each band with probability (imgfilter * strength * band_strength).
         g = tf.ones([batch, num_bands]) # Global gain vector (identity).
         for i, band_strength in enumerate(imgfilter_bands):
-            t_i = 2 ** tf.random_normal([batch], 0, imgfilter_std)
+            t_i = 2 ** tf.random.normal([batch], 0, imgfilter_std)
             t_i = gate_augment_params(imgfilter * strength * band_strength, t_i, 1)
             if debug_percentile is not None:
                 t_i = 2 ** (tflib.erfinv(tf.broadcast_to(debug_percentile, [batch]) * 2 - 1) * imgfilter_std) if band_strength > 0 else tf.ones([batch])
             t = tf.ones([batch, num_bands]) # Temporary gain vector.
             t = tf.concat([t[:, :i], t_i[:, np.newaxis], t[:, i+1:]], axis=-1) # Replace i'th element.
-            t /= tf.sqrt(tf.reduce_sum(expected_power * tf.square(t), axis=-1, keepdims=True)) # Normalize power.
+            t /= tf.sqrt(tf.reduce_sum(input_tensor=expected_power * tf.square(t), axis=-1, keepdims=True)) # Normalize power.
             g *= t # Accumulate into global gain.
 
         # Construct filter bank.
@@ -539,7 +539,7 @@ def augment_pipeline(
 
         # Construct combined amplification filter.
         Hz_prime = g @ Hz_bands # [batch, tap]
-        Hz_prime = tf.transpose(Hz_prime) # [tap, batch]
+        Hz_prime = tf.transpose(a=Hz_prime) # [tap, batch]
         Hz_prime = tf.tile(Hz_prime[:, :, np.newaxis], [1, 1, channels]) # [tap, batch, channels]
         Hz_prime = tf.reshape(Hz_prime, [-1, batch * channels, 1]) # [tap, batch * channels, 1]
 
@@ -558,18 +558,18 @@ def augment_pipeline(
 
     # Apply additive RGB noise with probability (noise * strength).
     if noise > 0:
-        sigma = tf.abs(tf.random_normal([batch], 0, noise_std))
+        sigma = tf.abs(tf.random.normal([batch], 0, noise_std))
         sigma = gate_augment_params(noise * strength, sigma, 0)
         if debug_percentile is not None:
             sigma = tflib.erfinv(tf.broadcast_to(debug_percentile, [batch])) * noise_std
         sigma = tf.reshape(sigma, [-1, 1, 1, 1])
-        images += tf.random_normal([batch, channels, height, width]) * sigma
+        images += tf.random.normal([batch, channels, height, width]) * sigma
 
     # Apply cutout with probability (cutout * strength).
     if cutout > 0:
         size = tf.fill([batch, 2], cutout_size)
         size = gate_augment_params(cutout * strength, size, 0)
-        center = tf.random_uniform([batch, 2], 0, 1)
+        center = tf.random.uniform([batch, 2], 0, 1)
         if debug_percentile is not None:
             size = tf.fill([batch, 2], cutout_size)
             center = tf.broadcast_to(debug_percentile, [batch, 2])

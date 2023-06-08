@@ -55,19 +55,19 @@ def _create_var(name: str, value_expr: TfExpression) -> TfExpression:
         size_expr = tf.constant(size, dtype=_dtype)
     else:
         size = None
-        size_expr = tf.reduce_prod(tf.cast(tf.shape(v), _dtype))
+        size_expr = tf.reduce_prod(input_tensor=tf.cast(tf.shape(input=v), _dtype))
 
     if size == 1:
         if v.shape.ndims != 0:
             v = tf.reshape(v, [])
         v = [size_expr, v, tf.square(v)]
     else:
-        v = [size_expr, tf.reduce_sum(v), tf.reduce_sum(tf.square(v))]
-    v = tf.cond(tf.is_finite(v[1]), lambda: tf.stack(v), lambda: tf.zeros(3, dtype=_dtype))
+        v = [size_expr, tf.reduce_sum(input_tensor=v), tf.reduce_sum(input_tensor=tf.square(v))]
+    v = tf.cond(pred=tf.math.is_finite(v[1]), true_fn=lambda: tf.stack(v), false_fn=lambda: tf.zeros(3, dtype=_dtype))
 
     with tfutil.absolute_name_scope("Autosummary/" + name_id), tf.control_dependencies(None):
         var = tf.Variable(tf.zeros(3, dtype=_dtype), trainable=False)  # [sum(1), sum(x), sum(x**2)]
-    update_op = tf.cond(tf.is_variable_initialized(var), lambda: tf.assign_add(var, v), lambda: tf.assign(var, v))
+    update_op = tf.cond(pred=tf.compat.v1.is_variable_initialized(var), true_fn=lambda: tf.compat.v1.assign_add(var, v), false_fn=lambda: tf.compat.v1.assign(var, v))
 
     if name in _vars:
         _vars[name].append(var)
@@ -97,9 +97,9 @@ def autosummary(name: str, value: TfExpressionEx, passthru: TfExpressionEx = Non
     name_id = name.replace("/", "_")
 
     if tfutil.is_tf_expression(value):
-        with tf.name_scope("summary_" + name_id), tf.device(value.device):
-            condition = tf.convert_to_tensor(condition, name='condition')
-            update_op = tf.cond(condition, lambda: tf.group(_create_var(name, value)), tf.no_op)
+        with tf.compat.v1.name_scope("summary_" + name_id), tf.device(value.device):
+            condition = tf.convert_to_tensor(value=condition, name='condition')
+            update_op = tf.cond(pred=condition, true_fn=lambda: tf.group(_create_var(name, value)), false_fn=tf.no_op)
             with tf.control_dependencies([update_op]):
                 return tf.identity(value if passthru is None else passthru)
 
@@ -109,7 +109,7 @@ def autosummary(name: str, value: TfExpressionEx, passthru: TfExpressionEx = Non
         if condition:
             if name not in _immediate:
                 with tfutil.absolute_name_scope("Autosummary/" + name_id), tf.device(None), tf.control_dependencies(None):
-                    update_value = tf.placeholder(_dtype)
+                    update_value = tf.compat.v1.placeholder(_dtype)
                     update_op = _create_var(name, update_value)
                     _immediate[name] = update_op, update_value
             update_op, update_value = _immediate[name]
@@ -138,14 +138,14 @@ def finalize_autosummaries() -> None:
                 moments = tf.add_n(vars_list)
                 moments /= moments[0]
                 with tf.control_dependencies([moments]):  # read before resetting
-                    reset_ops = [tf.assign(var, tf.zeros(3, dtype=_dtype)) for var in vars_list]
+                    reset_ops = [tf.compat.v1.assign(var, tf.zeros(3, dtype=_dtype)) for var in vars_list]
                     with tf.name_scope(None), tf.control_dependencies(reset_ops):  # reset before reporting
                         mean = moments[1]
                         std = tf.sqrt(moments[2] - tf.square(moments[1]))
-                        tf.summary.scalar(name, mean)
+                        tf.compat.v1.summary.scalar(name, mean)
                         if enable_custom_scalars:
-                            tf.summary.scalar("xCustomScalars/" + name + "/margin_lo", mean - std)
-                            tf.summary.scalar("xCustomScalars/" + name + "/margin_hi", mean + std)
+                            tf.compat.v1.summary.scalar("xCustomScalars/" + name + "/margin_lo", mean - std)
+                            tf.compat.v1.summary.scalar("xCustomScalars/" + name + "/margin_hi", mean + std)
 
     # Setup layout for custom scalars.
     layout = None
@@ -188,6 +188,6 @@ def save_summaries(file_writer, global_step=None):
         if layout is not None:
             file_writer.add_summary(layout)
         with tf.device(None), tf.control_dependencies(None):
-            _merge_op = tf.summary.merge_all()
+            _merge_op = tf.compat.v1.summary.merge_all()
 
     file_writer.add_summary(_merge_op.eval(), global_step)

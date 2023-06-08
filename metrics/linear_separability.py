@@ -123,7 +123,7 @@ class LS(metric_base.MetricBase):
                 Gs_clone = Gs.clone()
 
                 # Generate images.
-                latents = tf.random_normal([self.minibatch_per_gpu] + Gs_clone.input_shape[1:])
+                latents = tf.random.normal([self.minibatch_per_gpu] + Gs_clone.input_shape[1:])
                 labels = self._get_random_labels_tf(self.minibatch_per_gpu)
                 dlatents = Gs_clone.components.mapping.get_output_for(latents, labels, **G_kwargs)
                 images = Gs_clone.get_output_for(latents, None, **G_kwargs)
@@ -133,7 +133,7 @@ class LS(metric_base.MetricBase):
                 if images.shape[2] > 256:
                     factor = images.shape[2] // 256
                     images = tf.reshape(images, [-1, images.shape[1], images.shape[2] // factor, factor, images.shape[3] // factor, factor])
-                    images = tf.reduce_mean(images, axis=[3, 5])
+                    images = tf.reduce_mean(input_tensor=images, axis=[3, 5])
 
                 # Run classifier for each attribute.
                 result_dict = dict(latents=latents, dlatents=dlatents[:,-1])

@@ -171,28 +171,28 @@ def training_loop(
     data_fetch_ops = []
     training_set.configure(minibatch_gpu)
     for gpu, (G_gpu, D_gpu) in enumerate(zip(G_gpus, D_gpus)):
-        with tf.name_scope(f'Train_gpu{gpu}'), tf.device(f'/gpu:{gpu}'):
+        with tf.compat.v1.name_scope(f'Train_gpu{gpu}'), tf.device(f'/gpu:{gpu}'):
 
             # Fetch training data via temporary variables.
-            with tf.name_scope('DataFetch'):
+            with tf.compat.v1.name_scope('DataFetch'):
                 real_images_var = tf.Variable(name='images', trainable=False, initial_value=tf.zeros([minibatch_gpu] + training_set.shape))
                 real_labels_var = tf.Variable(name='labels', trainable=False, initial_value=tf.zeros([minibatch_gpu, training_set.label_size]))
                 real_images_write, real_labels_write = training_set.get_minibatch_tf()
                 real_images_write = tflib.convert_images_from_uint8(real_images_write)
-                data_fetch_ops += [tf.assign(real_images_var, real_images_write)]
-                data_fetch_ops += [tf.assign(real_labels_var, real_labels_write)]
+                data_fetch_ops += [tf.compat.v1.assign(real_images_var, real_images_write)]
+                data_fetch_ops += [tf.compat.v1.assign(real_labels_var, real_labels_write)]
 
             # Evaluate loss function and register gradients.
             fake_labels = training_set.get_random_labels_tf(minibatch_gpu)
             terms = dnnlib.util.call_func_by_name(G=G_gpu, D=D_gpu, aug=aug, fake_labels=fake_labels, real_images=real_images_var, real_labels=real_labels_var, **loss_args)
             if lazy_regularization:
-                if terms.G_reg is not None: G_reg_opt.register_gradients(tf.reduce_mean(terms.G_reg * G_reg_interval), G_gpu.trainables)
-                if terms.D_reg is not None: D_reg_opt.register_gradients(tf.reduce_mean(terms.D_reg * D_reg_interval), D_gpu.trainables)
+                if terms.G_reg is not None: G_reg_opt.register_gradients(tf.reduce_mean(input_tensor=terms.G_reg * G_reg_interval), G_gpu.trainables)
+                if terms.D_reg is not None: D_reg_opt.register_gradients(tf.reduce_mean(input_tensor=terms.D_reg * D_reg_interval), D_gpu.trainables)
             else:
                 if terms.G_reg is not None: terms.G_loss += terms.G_reg
                 if terms.D_reg is not None: terms.D_loss += terms.D_reg
-            G_opt.register_gradients(tf.reduce_mean(terms.G_loss), G_gpu.trainables)
-            D_opt.register_gradients(tf.reduce_mean(terms.D_loss), D_gpu.trainables)
+            G_opt.register_gradients(tf.reduce_mean(input_tensor=terms.G_loss), G_gpu.trainables)
+            D_opt.register_gradients(tf.reduce_mean(input_tensor=terms.D_loss), D_gpu.trainables)
 
     print('Finalizing training ops...')
     data_fetch_op = tf.group(*data_fetch_ops)
@@ -200,14 +200,14 @@ def training_loop(
     D_train_op = D_opt.apply_updates()
     G_reg_op = G_reg_opt.apply_updates(allow_no_op=True)
     D_reg_op = D_reg_opt.apply_updates(allow_no_op=True)
-    Gs_beta_in = tf.placeholder(tf.float32, name='Gs_beta_in', shape=[])
+    Gs_beta_in = tf.compat.v1.placeholder(tf.float32, name='Gs_beta_in', shape=[])
     Gs_update_op = Gs.setup_as_moving_average_of(G, beta=Gs_beta_in)
     tflib.init_uninitialized_vars()
     with tf.device('/gpu:0'):
         peak_gpu_mem_op = tf.contrib.memory_stats.MaxBytesInUse()
 
     print('Initializing metrics...')
-    summary_log = tf.summary.FileWriter(run_dir)
+    summary_log = tf.compat.v1.summary.FileWriter(run_dir)
     metrics = []
     for args in metric_arg_list:
         metric = dnnlib.util.construct_class_by_name(**args)

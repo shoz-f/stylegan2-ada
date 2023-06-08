@@ -69,8 +69,8 @@ class TFRecordDataset:
         assert len(tfr_files) >= 1
         tfr_shapes = []
         for tfr_file in tfr_files:
-            tfr_opt = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.NONE)
-            for record in tf.python_io.tf_record_iterator(tfr_file, tfr_opt):
+            tfr_opt = tf.io.TFRecordOptions(tf.compat.v1.python_io.TFRecordCompressionType.NONE)
+            for record in tf.compat.v1.python_io.tf_record_iterator(tfr_file, tfr_opt):
                 tfr_shapes.append(self.parse_tfrecord_np(record).shape)
                 break
 
@@ -109,8 +109,8 @@ class TFRecordDataset:
         self.label_dtype = self._np_labels.dtype.name
 
         # Build TF expressions.
-        with tf.name_scope('Dataset'), tf.device('/cpu:0'), tf.control_dependencies(None):
-            self._tf_minibatch_in = tf.placeholder(tf.int64, name='minibatch_in', shape=[])
+        with tf.compat.v1.name_scope('Dataset'), tf.device('/cpu:0'), tf.control_dependencies(None):
+            self._tf_minibatch_in = tf.compat.v1.placeholder(tf.int64, name='minibatch_in', shape=[])
             self._tf_labels_var = tflib.create_var_with_large_initial_value(self._np_labels, name='labels_var')
             self._tf_labels_dataset = tf.data.Dataset.from_tensor_slices(self._tf_labels_var)
             for tfr_file, tfr_shape, tfr_lod in zip(tfr_files, tfr_shapes, tfr_lods):
@@ -130,7 +130,7 @@ class TFRecordDataset:
                     dset = dset.prefetch(((prefetch_mb << 20) - 1) // bytes_per_item + 1)
                 dset = dset.batch(self._tf_minibatch_in)
                 self._tf_datasets[tfr_lod] = dset
-            self._tf_iterator = tf.data.Iterator.from_structure(self._tf_datasets[0].output_types, self._tf_datasets[0].output_shapes)
+            self._tf_iterator = tf.compat.v1.data.Iterator.from_structure(self._tf_datasets[0].output_types, self._tf_datasets[0].output_shapes)
             self._tf_init_ops = {lod: self._tf_iterator.make_initializer(dset) for lod, dset in self._tf_datasets.items()}
 
     def close(self):
@@ -150,7 +150,7 @@ class TFRecordDataset:
         images, labels = self._tf_iterator.get_next()
         if self.mirror_augment:
             images = tf.cast(images, tf.float32)
-            images = tf.where(tf.random_uniform([tf.shape(images)[0]]) < 0.5, images, tf.reverse(images, [3]))
+            images = tf.compat.v1.where(tf.random.uniform([tf.shape(input=images)[0]]) < 0.5, images, tf.reverse(images, [3]))
             images = tf.cast(images, self.dtype)
         return images, labels
 
@@ -158,7 +158,7 @@ class TFRecordDataset:
     def get_minibatch_np(self, minibatch_size, lod=0): # => (images, labels) or (None, None)
         self.configure(minibatch_size, lod)
         if self._tf_minibatch_np is None:
-            with tf.name_scope('Dataset'):
+            with tf.compat.v1.name_scope('Dataset'):
                 self._tf_minibatch_np = self.get_minibatch_tf()
         try:
             return tflib.run(self._tf_minibatch_np)
@@ -167,10 +167,10 @@ class TFRecordDataset:
 
     # Get random labels as TensorFlow expression.
     def get_random_labels_tf(self, minibatch_size): # => labels
-        with tf.name_scope('Dataset'):
+        with tf.compat.v1.name_scope('Dataset'):
             if self.label_size > 0:
                 with tf.device('/cpu:0'):
-                    return tf.gather(self._tf_labels_var, tf.random_uniform([minibatch_size], 0, self._np_labels.shape[0], dtype=tf.int32))
+                    return tf.gather(self._tf_labels_var, tf.random.uniform([minibatch_size], 0, self._np_labels.shape[0], dtype=tf.int32))
             return tf.zeros([minibatch_size, 0], self.label_dtype)
 
     # Get random labels as NumPy array.
@@ -204,10 +204,10 @@ class TFRecordDataset:
     # Parse individual image from a tfrecords file into TensorFlow expression.
     @staticmethod
     def parse_tfrecord_tf(record):
-        features = tf.parse_single_example(record, features={
-            'shape': tf.FixedLenFeature([3], tf.int64),
-            'data': tf.FixedLenFeature([], tf.string)})
-        data = tf.decode_raw(features['data'], tf.uint8)
+        features = tf.io.parse_single_example(serialized=record, features={
+            'shape': tf.io.FixedLenFeature([3], tf.int64),
+            'data': tf.io.FixedLenFeature([], tf.string)})
+        data = tf.io.decode_raw(features['data'], tf.uint8)
         return tf.reshape(data, features['shape'])
 
     # Parse individual image from a tfrecords file into NumPy array.

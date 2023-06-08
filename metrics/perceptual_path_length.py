@@ -21,13 +21,13 @@ from metrics import metric_base
 
 # Normalize batch of vectors.
 def normalize(v):
-    return v / tf.sqrt(tf.reduce_sum(tf.square(v), axis=-1, keepdims=True))
+    return v / tf.sqrt(tf.reduce_sum(input_tensor=tf.square(v), axis=-1, keepdims=True))
 
 # Spherical interpolation of a batch of vectors.
 def slerp(a, b, t):
     a = normalize(a)
     b = normalize(b)
-    d = tf.reduce_sum(a * b, axis=-1, keepdims=True)
+    d = tf.reduce_sum(input_tensor=a * b, axis=-1, keepdims=True)
     p = t * tf.math.acos(d)
     c = normalize(b - d * a)
     d = a * tf.math.cos(p) + c * tf.math.sin(p)
@@ -58,8 +58,8 @@ class PPL(metric_base.MetricBase):
                 noise_vars = [var for name, var in Gs_clone.components.synthesis.vars.items() if name.startswith('noise')]
 
                 # Generate random latents and interpolation t-values.
-                lat_t01 = tf.random_normal([self.minibatch_per_gpu * 2] + Gs_clone.input_shape[1:])
-                lerp_t = tf.random_uniform([self.minibatch_per_gpu], 0.0, 1.0 if self.sampling == 'full' else 0.0)
+                lat_t01 = tf.random.normal([self.minibatch_per_gpu * 2] + Gs_clone.input_shape[1:])
+                lerp_t = tf.random.uniform([self.minibatch_per_gpu], 0.0, 1.0 if self.sampling == 'full' else 0.0)
                 labels = tf.reshape(tf.tile(self._get_random_labels_tf(self.minibatch_per_gpu), [1, 2]), [self.minibatch_per_gpu * 2, -1])
 
                 # Interpolate in W or Z.
@@ -91,7 +91,7 @@ class PPL(metric_base.MetricBase):
                 factor = images.shape[2] // 256
                 if factor > 1:
                     images = tf.reshape(images, [-1, images.shape[1], images.shape[2] // factor, factor, images.shape[3] // factor, factor])
-                    images = tf.reduce_mean(images, axis=[3,5])
+                    images = tf.reduce_mean(input_tensor=images, axis=[3,5])
 
                 # Scale dynamic range from [-1,1] to [0,255] for VGG.
                 images = (images + 1) * (255 / 2)

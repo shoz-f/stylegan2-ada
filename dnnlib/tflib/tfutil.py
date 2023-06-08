@@ -30,7 +30,7 @@ TfExpressionEx = Union[TfExpression, int, float, np.ndarray]
 def run(*args, **kwargs) -> Any:
     """Run the specified ops in the default session."""
     assert_tf_initialized()
-    return tf.get_default_session().run(*args, **kwargs)
+    return tf.compat.v1.get_default_session().run(*args, **kwargs)
 
 
 def is_tf_expression(x: Any) -> bool:
@@ -45,19 +45,19 @@ def shape_to_list(shape: Iterable[tf.compat.v1.Dimension]) -> List[Union[int, No
 
 def flatten(x: TfExpressionEx) -> TfExpression:
     """Shortcut function for flattening a tensor."""
-    with tf.name_scope("Flatten"):
+    with tf.compat.v1.name_scope("Flatten"):
         return tf.reshape(x, [-1])
 
 
 def log2(x: TfExpressionEx) -> TfExpression:
     """Logarithm in base 2."""
-    with tf.name_scope("Log2"):
-        return tf.log(x) * np.float32(1.0 / np.log(2.0))
+    with tf.compat.v1.name_scope("Log2"):
+        return tf.math.log(x) * np.float32(1.0 / np.log(2.0))
 
 
 def exp2(x: TfExpressionEx) -> TfExpression:
     """Exponent in base 2."""
-    with tf.name_scope("Exp2"):
+    with tf.compat.v1.name_scope("Exp2"):
         return tf.exp(x * np.float32(np.log(2.0)))
 
 
@@ -70,24 +70,24 @@ def erfinv(y: TfExpressionEx) -> TfExpression:
 
 def lerp(a: TfExpressionEx, b: TfExpressionEx, t: TfExpressionEx) -> TfExpressionEx:
     """Linear interpolation."""
-    with tf.name_scope("Lerp"):
+    with tf.compat.v1.name_scope("Lerp"):
         return a + (b - a) * t
 
 
 def lerp_clip(a: TfExpressionEx, b: TfExpressionEx, t: TfExpressionEx) -> TfExpression:
     """Linear interpolation with clip."""
-    with tf.name_scope("LerpClip"):
+    with tf.compat.v1.name_scope("LerpClip"):
         return a + (b - a) * tf.clip_by_value(t, 0.0, 1.0)
 
 
 def absolute_name_scope(scope: str) -> tf.name_scope:
     """Forcefully enter the specified name scope, ignoring any surrounding scopes."""
-    return tf.name_scope(scope + "/")
+    return tf.compat.v1.name_scope(scope + "/")
 
 
 def absolute_variable_scope(scope: str, **kwargs) -> tf.compat.v1.variable_scope:
     """Forcefully enter the specified variable scope, ignoring any surrounding scopes."""
-    return tf.variable_scope(tf.VariableScope(name=scope, **kwargs), auxiliary_name_scope=False)
+    return tf.compat.v1.variable_scope(tf.compat.v1.VariableScope(name=scope, **kwargs), auxiliary_name_scope=False)
 
 
 def _sanitize_tf_config(config_dict: dict = None) -> dict:
@@ -179,7 +179,7 @@ def init_uninitialized_vars(target_vars: List[tf.Variable] = None) -> None:
     """
     assert_tf_initialized()
     if target_vars is None:
-        target_vars = tf.global_variables()
+        target_vars = tf.compat.v1.global_variables()
 
     test_vars = []
     test_ops = []
@@ -189,13 +189,13 @@ def init_uninitialized_vars(target_vars: List[tf.Variable] = None) -> None:
             assert is_tf_expression(var)
 
             try:
-                tf.get_default_graph().get_tensor_by_name(var.name.replace(":0", "/IsVariableInitialized:0"))
+                tf.compat.v1.get_default_graph().get_tensor_by_name(var.name.replace(":0", "/IsVariableInitialized:0"))
             except KeyError:
                 # Op does not exist => variable may be uninitialized.
                 test_vars.append(var)
 
                 with absolute_name_scope(var.name.split(":")[0]):
-                    test_ops.append(tf.is_variable_initialized(var))
+                    test_ops.append(tf.compat.v1.is_variable_initialized(var))
 
     init_vars = [var for var, inited in zip(test_vars, run(test_ops)) if not inited]
     run([var.initializer for var in init_vars])
@@ -215,11 +215,11 @@ def set_vars(var_to_value_dict: dict) -> None:
         assert is_tf_expression(var)
 
         try:
-            setter = tf.get_default_graph().get_tensor_by_name(var.name.replace(":0", "/setter:0"))  # look for existing op
+            setter = tf.compat.v1.get_default_graph().get_tensor_by_name(var.name.replace(":0", "/setter:0"))  # look for existing op
         except KeyError:
             with absolute_name_scope(var.name.split(":")[0]):
                 with tf.control_dependencies(None):  # ignore surrounding control_dependencies
-                    setter = tf.assign(var, tf.placeholder(var.dtype, var.shape, "new_value"), name="setter")  # create new setter
+                    setter = tf.compat.v1.assign(var, tf.compat.v1.placeholder(var.dtype, var.shape, "new_value"), name="setter")  # create new setter
 
         ops.append(setter)
         feed_dict[setter.op.inputs[1]] = value
@@ -243,7 +243,7 @@ def convert_images_from_uint8(images, drange=[-1,1], nhwc_to_nchw=False):
     """
     images = tf.cast(images, tf.float32)
     if nhwc_to_nchw:
-        images = tf.transpose(images, [0, 3, 1, 2])
+        images = tf.transpose(a=images, perm=[0, 3, 1, 2])
     return images * ((drange[1] - drange[0]) / 255) + drange[0]
 
 
@@ -254,9 +254,9 @@ def convert_images_to_uint8(images, drange=[-1,1], nchw_to_nhwc=False, shrink=1)
     images = tf.cast(images, tf.float32)
     if shrink > 1:
         ksize = [1, 1, shrink, shrink]
-        images = tf.nn.avg_pool(images, ksize=ksize, strides=ksize, padding="VALID", data_format="NCHW")
+        images = tf.nn.avg_pool2d(input=images, ksize=ksize, strides=ksize, padding="VALID", data_format="NCHW")
     if nchw_to_nhwc:
-        images = tf.transpose(images, [0, 2, 3, 1])
+        images = tf.transpose(a=images, perm=[0, 2, 3, 1])
     scale = 255 / (drange[1] - drange[0])
     images = images * scale + (0.5 - drange[0] * scale)
     return tf.saturate_cast(images, tf.uint8)

@@ -22,10 +22,10 @@ from metrics import metric_base
 
 def batch_pairwise_distances(U, V):
     """ Compute pairwise distances between two batches of feature vectors."""
-    with tf.variable_scope('pairwise_dist_block'):
+    with tf.compat.v1.variable_scope('pairwise_dist_block'):
         # Squared norms of each row in U and V.
-        norm_u = tf.reduce_sum(tf.square(U), 1)
-        norm_v = tf.reduce_sum(tf.square(V), 1)
+        norm_u = tf.reduce_sum(input_tensor=tf.square(U), axis=1)
+        norm_v = tf.reduce_sum(input_tensor=tf.square(V), axis=1)
 
         # norm_u as a row and norm_v as a column vectors.
         norm_u = tf.reshape(norm_u, [-1, 1])
@@ -46,8 +46,8 @@ class DistanceBlock():
 
         # Initialize TF graph to calculate pairwise distances.
         with tf.device('/cpu:0'):
-            self._features_batch1 = tf.placeholder(tf.float16, shape=[None, self.num_features])
-            self._features_batch2 = tf.placeholder(tf.float16, shape=[None, self.num_features])
+            self._features_batch1 = tf.compat.v1.placeholder(tf.float16, shape=[None, self.num_features])
+            self._features_batch2 = tf.compat.v1.placeholder(tf.float16, shape=[None, self.num_features])
             features_split2 = tf.split(self._features_batch2, self.num_gpus, axis=0)
             distances_split = []
             for gpu_idx in range(self.num_gpus):
@@ -211,7 +211,7 @@ class PR(metric_base.MetricBase):
             with tf.device(f'/gpu:{gpu_idx}'):
                 Gs_clone = Gs.clone()
                 feature_net_clone = feature_net.clone()
-                latents = tf.random_normal([self.minibatch_per_gpu] + Gs_clone.input_shape[1:])
+                latents = tf.random.normal([self.minibatch_per_gpu] + Gs_clone.input_shape[1:])
                 labels = self._get_random_labels_tf(self.minibatch_per_gpu)
                 images = Gs_clone.get_output_for(latents, labels, **G_kwargs)
                 if images.shape[1] == 1: images = tf.tile(images, [1, 3, 1, 1])
