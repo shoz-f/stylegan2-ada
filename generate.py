@@ -112,7 +112,7 @@ def main():
     parser.add_argument('--class', dest='class_idx', type=int, help='Class label (default: unconditional)')
     parser.add_argument('--outdir', help='Where to save the output images', required=True, metavar='DIR')
 
-    args = parser.parse_args()
+    args = parser.parse_args(['--outdir=out', '--trunc=1', '--seeds=85,265,297,849', '--network=https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada/pretrained/metfaces.pkl'])
     generate_images(**vars(args))
 
 #----------------------------------------------------------------------------
