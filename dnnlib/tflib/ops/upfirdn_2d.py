@@ -61,13 +61,14 @@ def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, 
         'ref':  _upfirdn_2d_ref,
         'cuda': _upfirdn_2d_cuda,
     }
-    return impl_dict[impl](x=x, k=k, upx=upx, upy=upy, downx=downx, downy=downy, padx0=padx0, padx1=padx1, pady0=pady0, pady1=pady1)
+    return impl_dict['ref'](x=x, k=k, upx=upx, upy=upy, downx=downx, downy=downy, padx0=padx0, padx1=padx1, pady0=pady0, pady1=pady1)
 
 #----------------------------------------------------------------------------
 
 def _upfirdn_2d_ref(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
     """Slow reference implementation of `upfirdn_2d()` using standard TensorFlow ops."""
 
+    print("###_upfirdn_2d_ref")
     x = tf.convert_to_tensor(x)
     k = np.asarray(k, dtype=np.float32)
     assert x.shape.rank == 4
@@ -95,7 +96,9 @@ def _upfirdn_2d_ref(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
     x = tf.transpose(x, [0, 3, 1, 2])
     x = tf.reshape(x, [-1, 1, inH * upy + pady0 + pady1, inW * upx + padx0 + padx1])
     w = tf.constant(k[::-1, ::-1, np.newaxis, np.newaxis], dtype=x.dtype)
-    x = tf.nn.conv2d(x, w, strides=[1,1,1,1], padding='VALID', data_format='NCHW')
+    x = tf.transpose(x, [0, 2, 3, 1])
+    x = tf.nn.conv2d(x, w, strides=[1,1,1,1], padding='VALID', data_format='NHWC')
+    x = tf.transpose(x, [0, 3, 1, 2])
     x = tf.reshape(x, [-1, minorDim, inH * upy + pady0 + pady1 - kernelH + 1, inW * upx + padx0 + padx1 - kernelW + 1])
     x = tf.transpose(x, [0, 2, 3, 1])
 
@@ -270,6 +273,7 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
 
+    print("###upsample_conv_2d")
     # Check weight shape.
     w = tf.convert_to_tensor(w)
     ch, cw, _inC, _outC = w.shape.as_list()
@@ -337,6 +341,7 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
 
+    print("###conv_downsample_2d")
     # Check weight shape.
     w = tf.convert_to_tensor(w)
     ch, cw, _inC, _outC = w.shape.as_list()

@@ -63,19 +63,22 @@ def dense_layer(x, fmaps, lrmul=1, weight_var='weight', trainable=True, use_spec
 # 2D convolution op with optional upsampling, downsampling, and padding.
 
 def conv2d(x, w, up=False, down=False, resample_kernel=None, padding=0):
+    print("###networks.conv2d")
     assert not (up and down)
     kernel = w.shape[0].value
     assert w.shape[1].value == kernel
     assert kernel >= 1 and kernel % 2 == 1
 
     w = tf.cast(w, x.dtype)
+    x = tf.transpose(x, [0, 2, 3, 1])
     if up:
-        x = upsample_conv_2d(x, w, data_format='NCHW', k=resample_kernel, padding=padding)
+        x = upsample_conv_2d(x, w, data_format='NHWC', k=resample_kernel, padding=padding)
     elif down:
-        x = conv_downsample_2d(x, w, data_format='NCHW', k=resample_kernel, padding=padding)
+        x = conv_downsample_2d(x, w, data_format='NHWC', k=resample_kernel, padding=padding)
     else:
         padding_mode = {0: 'SAME', -(kernel // 2): 'VALID'}[padding]
-        x = tf.nn.conv2d(x, w, data_format='NCHW', strides=[1,1,1,1], padding=padding_mode)
+        x = tf.nn.conv2d(x, w, data_format='NHWC', strides=[1,1,1,1], padding=padding_mode)
+    x = tf.transpose(x, [0, 3, 1, 2])
     return x
 
 #----------------------------------------------------------------------------
