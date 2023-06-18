@@ -33,7 +33,7 @@ activation_funcs = {
 
 #----------------------------------------------------------------------------
 
-def fused_bias_act(x, b=None, axis=1, act='linear', alpha=None, gain=None, clamp=None, impl='cuda'):
+def fused_bias_act(x, b=None, axis=1, act='linear', alpha=None, gain=None, clamp=None, impl='ref'):
     r"""Fused bias and activation function.
 
     Adds bias `b` to activation tensor `x`, evaluates activation function `act`,
@@ -69,7 +69,7 @@ def fused_bias_act(x, b=None, axis=1, act='linear', alpha=None, gain=None, clamp
         'ref':  _fused_bias_act_ref,
         'cuda': _fused_bias_act_cuda,
     }
-    return impl_dict['ref'](x=x, b=b, axis=axis, act=act, alpha=alpha, gain=gain, clamp=clamp)
+    return impl_dict[impl](x=x, b=b, axis=axis, act=act, alpha=alpha, gain=gain, clamp=clamp)
 
 #----------------------------------------------------------------------------
 

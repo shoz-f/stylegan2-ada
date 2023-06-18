@@ -18,7 +18,7 @@ def _get_plugin():
 
 #----------------------------------------------------------------------------
 
-def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, pady1=0, impl='cuda'):
+def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, pady1=0, impl='ref'):
     r"""Pad, upsample, FIR filter, and downsample a batch of 2D images.
 
     Accepts a batch of 2D images of the shape `[majorDim, inH, inW, minorDim]`
@@ -61,14 +61,13 @@ def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, 
         'ref':  _upfirdn_2d_ref,
         'cuda': _upfirdn_2d_cuda,
     }
-    return impl_dict['ref'](x=x, k=k, upx=upx, upy=upy, downx=downx, downy=downy, padx0=padx0, padx1=padx1, pady0=pady0, pady1=pady1)
+    return impl_dict[impl](x=x, k=k, upx=upx, upy=upy, downx=downx, downy=downy, padx0=padx0, padx1=padx1, pady0=pady0, pady1=pady1)
 
 #----------------------------------------------------------------------------
 
 def _upfirdn_2d_ref(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
     """Slow reference implementation of `upfirdn_2d()` using standard TensorFlow ops."""
 
-    print("###_upfirdn_2d_ref")
     x = tf.convert_to_tensor(x)
     k = np.asarray(k, dtype=np.float32)
     assert x.shape.rank == 4
@@ -147,7 +146,7 @@ def _upfirdn_2d_cuda(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
 
 #----------------------------------------------------------------------------
 
-def filter_2d(x, k, gain=1, padding=0, data_format='NCHW', impl='cuda'):
+def filter_2d(x, k, gain=1, padding=0, data_format='NCHW', impl='ref'):
     r"""Filter a batch of 2D images with the given FIR filter.
 
     Accepts a batch of 2D images of the shape `[N, C, H, W]` or `[N, H, W, C]`
@@ -176,7 +175,7 @@ def filter_2d(x, k, gain=1, padding=0, data_format='NCHW', impl='cuda'):
 
 #----------------------------------------------------------------------------
 
-def upsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='cuda'):
+def upsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
     r"""Upsample a batch of 2D images with the given filter.
 
     Accepts a batch of 2D images of the shape `[N, C, H, W]` or `[N, H, W, C]`
@@ -211,7 +210,7 @@ def upsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl
 
 #----------------------------------------------------------------------------
 
-def downsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='cuda'):
+def downsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
     r"""Downsample a batch of 2D images with the given filter.
 
     Accepts a batch of 2D images of the shape `[N, C, H, W]` or `[N, H, W, C]`
@@ -245,7 +244,7 @@ def downsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', im
 
 #----------------------------------------------------------------------------
 
-def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='cuda'):
+def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
     r"""Fused `upsample_2d()` followed by `tf.nn.conv2d()`.
 
     Padding is performed only once at the beginning, not between the operations.
@@ -273,7 +272,6 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
 
-    print("###upsample_conv_2d")
     # Check weight shape.
     w = tf.convert_to_tensor(w)
     ch, cw, _inC, _outC = w.shape.as_list()
@@ -281,9 +279,12 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
     outC = _shape(w, 3)
     assert cw == ch
 
+    x = tf.transpose(x, [0,2,3,1]) if data_format == 'NCHW' else x
+
     # Fast path for 1x1 convolution.
     if cw == 1 and ch == 1:
-        x = tf.nn.conv2d(x, w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
+        x = tf.nn.conv2d(x, w, data_format="NHWC", strides=[1,1,1,1], padding='VALID')
+        x = tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
         x = upsample_2d(x, k, factor=factor, gain=gain, padding=padding, data_format=data_format, impl=impl)
         return x
 
@@ -292,14 +293,9 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
     assert k.w == k.h
 
     # Determine data dimensions.
-    if data_format == 'NCHW':
-        stride = [1, 1, factor, factor]
-        output_shape = [_shape(x, 0), outC, (_shape(x, 2) - 1) * factor + ch, (_shape(x, 3) - 1) * factor + cw]
-        num_groups = _shape(x, 1) // inC
-    else:
-        stride = [1, factor, factor, 1]
-        output_shape = [_shape(x, 0), (_shape(x, 1) - 1) * factor + ch, (_shape(x, 2) - 1) * factor + cw, outC]
-        num_groups = _shape(x, 3) // inC
+    stride = [1, factor, factor, 1]
+    output_shape = [_shape(x, 0), (_shape(x, 1) - 1) * factor + ch, (_shape(x, 2) - 1) * factor + cw, outC]
+    num_groups = _shape(x, 3) // inC
 
     # Transpose weights.
     w = tf.reshape(w, [ch, cw, inC, num_groups, -1])
@@ -307,14 +303,15 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
     w = tf.reshape(w, [ch, cw, -1, num_groups * inC])
 
     # Execute.
-    x = tf.nn.conv2d_transpose(x, w, output_shape=output_shape, strides=stride, padding='VALID', data_format=data_format)
+    x = tf.nn.conv2d_transpose(x, w, output_shape=output_shape, strides=stride, padding='VALID', data_format="NHWC")
+    x = tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
     pad0 = (k.w + factor - cw) // 2 + padding
     pad1 = (k.w - factor - cw + 3) // 2 + padding
     return _simple_upfirdn_2d(x, k, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
 
 #----------------------------------------------------------------------------
 
-def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='cuda'):
+def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
     r"""Fused `tf.nn.conv2d()` followed by `downsample_2d()`.
 
     Padding is performed only once at the beginning, not between the operations.
@@ -341,7 +338,6 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
 
-    print("###conv_downsample_2d")
     # Check weight shape.
     w = tf.convert_to_tensor(w)
     ch, cw, _inC, _outC = w.shape.as_list()
@@ -350,7 +346,9 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     # Fast path for 1x1 convolution.
     if cw == 1 and ch == 1:
         x = downsample_2d(x, k, factor=factor, gain=gain, padding=padding, data_format=data_format, impl=impl)
+        x = tf.transpose(x, [0,2,3,1]) if data_format == 'NCHW' else x
         x = tf.nn.conv2d(x, w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
+        x = tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
         return x
 
     # Setup filter kernel.
@@ -367,7 +365,9 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     pad0 = (k.w - factor + cw) // 2 + padding * factor
     pad1 = (k.w - factor + cw - 1) // 2 + padding * factor
     x = _simple_upfirdn_2d(x, k, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
-    return tf.nn.conv2d(x, w, strides=s, padding='VALID', data_format=data_format)
+    x = tf.transpose(x, [0,2,3,1]) if data_format == 'NCHW' else x
+    x = tf.nn.conv2d(x, w, strides=s, padding='VALID', data_format=data_format)
+    return tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
 
 #----------------------------------------------------------------------------
 # Internal helpers.
@@ -396,7 +396,7 @@ class _FilterKernel:
             self.ky = None
             self.kxy = k * gain
 
-def _simple_upfirdn_2d(x, k, up=1, down=1, pad0=0, pad1=0, data_format='NCHW', impl='cuda'):
+def _simple_upfirdn_2d(x, k, up=1, down=1, pad0=0, pad1=0, data_format='NCHW', impl='ref'):
     assert isinstance(k, _FilterKernel)
     assert data_format in ['NCHW', 'NHWC']
     assert x.shape.rank == 4
