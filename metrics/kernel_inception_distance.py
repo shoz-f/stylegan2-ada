@@ -73,7 +73,7 @@ class KID(metric_base.MetricBase):
             with tf.device('/gpu:%d' % gpu_idx):
                 Gs_clone = Gs.clone()
                 feature_net_clone = feature_net.clone()
-                latents = tf.random_normal([self.minibatch_per_gpu] + Gs_clone.input_shape[1:])
+                latents = tf.random.normal([self.minibatch_per_gpu] + Gs_clone.input_shape[1:])
                 labels = self._get_random_labels_tf(self.minibatch_per_gpu)
                 images = Gs_clone.get_output_for(latents, labels, **G_kwargs)
                 if images.shape[1] == 1: images = tf.tile(images, [1, 3, 1, 1])

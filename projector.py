@@ -85,10 +85,10 @@ class Projector:
                 break
             v = self._Gs.vars[n]
             self._noise_vars.append(v)
-            noise_init_ops.append(tf.assign(v, tf.random_normal(tf.shape(v), dtype=tf.float32)))
+            noise_init_ops.append(tf.compat.v1.assign(v, tf.random.normal(tf.shape(v), dtype=tf.float32)))
             noise_mean = tf.reduce_mean(v)
             noise_std = tf.reduce_mean((v - noise_mean)**2)**0.5
-            noise_normalize_ops.append(tf.assign(v, (v - noise_mean) / noise_std))
+            noise_normalize_ops.append(tf.compat.v1.assign(v, (v - noise_mean) / noise_std))
         self._noise_init_op = tf.group(*noise_init_ops)
         self._noise_normalize_op = tf.group(*noise_normalize_ops)
 
@@ -96,7 +96,7 @@ class Projector:
         self._info('Building image output graph...')
         self._minibatch_size = 1
         self._dlatents_var = tf.Variable(tf.zeros([self._minibatch_size] + list(self._dlatent_avg.shape[1:])), name='dlatents_var')
-        self._dlatent_noise_in = tf.placeholder(tf.float32, [], name='noise_in')
+        self._dlatent_noise_in = tf.compat.v1.placeholder(tf.float32, [], name='noise_in')
         dlatents_noise = tf.random.normal(shape=self._dlatents_var.shape) * self._dlatent_noise_in
         self._dlatents_expr = tf.tile(self._dlatents_var + dlatents_noise, [1, self._Gs.components.synthesis.input_shape[1], 1])
         self._images_float_expr = tf.cast(self._Gs.components.synthesis.get_output_for(self._dlatents_expr), tf.float32)
@@ -134,7 +134,7 @@ class Projector:
 
         # Setup optimizer.
         self._info('Setting up optimizer...')
-        self._lrate_in = tf.placeholder(tf.float32, [], name='lrate_in')
+        self._lrate_in = tf.compat.v1.placeholder(tf.float32, [], name='lrate_in')
         self._opt = tflib.Optimizer(learning_rate=self._lrate_in)
         self._opt.register_gradients(self._loss, [self._dlatents_var] + self._noise_vars)
         self._opt_step = self._opt.apply_updates()

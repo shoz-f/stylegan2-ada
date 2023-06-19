@@ -91,13 +91,13 @@ def eval_D(D, aug, images, labels, report=None, augment_inputs=True, return_aux=
 def stylegan2(G, D, aug, fake_labels, real_images, real_labels, r1_gamma=10, pl_minibatch_shrink=2, pl_decay=0.01, pl_weight=2, **_kwargs):
     # Evaluate networks for the main loss.
     minibatch_size = tf.shape(fake_labels)[0]
-    fake_latents = tf.random_normal([minibatch_size] + G.input_shapes[0][1:])
+    fake_latents = tf.random.normal([minibatch_size] + G.input_shapes[0][1:])
     G_fake = eval_G(G, fake_latents, fake_labels, return_dlatents=True)
     D_fake = eval_D(D, aug, G_fake.images, fake_labels, report='fake')
     D_real = eval_D(D, aug, real_images, real_labels, report='real')
 
     # Non-saturating logistic loss from "Generative Adversarial Nets".
-    with tf.name_scope('Loss_main'):
+    with tf.compat.v1.name_scope('Loss_main'):
         G_loss = tf.nn.softplus(-D_fake.scores) # -log(sigmoid(D_fake.scores)), pylint: disable=invalid-unary-operand-type
         D_loss = tf.nn.softplus(D_fake.scores) # -log(1 - sigmoid(D_fake.scores))
         D_loss += tf.nn.softplus(-D_real.scores) # -log(sigmoid(D_real.scores)), pylint: disable=invalid-unary-operand-type
@@ -106,7 +106,7 @@ def stylegan2(G, D, aug, fake_labels, real_images, real_labels, r1_gamma=10, pl_
 
     # R1 regularizer from "Which Training Methods for GANs do actually Converge?".
     if r1_gamma != 0:
-        with tf.name_scope('Loss_R1'):
+        with tf.compat.v1.name_scope('Loss_R1'):
             r1_grads = tf.gradients(tf.reduce_sum(D_real.scores), [real_images])[0]
             r1_penalty = tf.reduce_sum(tf.square(r1_grads), axis=[1,2,3])
             r1_penalty = report_stat(aug, 'Loss/r1_penalty', r1_penalty)
@@ -114,7 +114,7 @@ def stylegan2(G, D, aug, fake_labels, real_images, real_labels, r1_gamma=10, pl_
 
     # Path length regularizer from "Analyzing and Improving the Image Quality of StyleGAN".
     if pl_weight != 0:
-        with tf.name_scope('Loss_PL'):
+        with tf.compat.v1.name_scope('Loss_PL'):
 
             # Evaluate the regularization term using a smaller minibatch to conserve memory.
             G_pl = G_fake
@@ -125,7 +125,7 @@ def stylegan2(G, D, aug, fake_labels, real_images, real_labels, r1_gamma=10, pl_
                 G_pl = eval_G(G, pl_latents, pl_labels, return_dlatents=True)
 
             # Compute |J*y|.
-            pl_noise = tf.random_normal(tf.shape(G_pl.images)) / np.sqrt(np.prod(G.output_shape[2:]))
+            pl_noise = tf.random.normal(tf.shape(G_pl.images)) / np.sqrt(np.prod(G.output_shape[2:]))
             pl_grads = tf.gradients(tf.reduce_sum(G_pl.images * pl_noise), [G_pl.dlatents])[0]
             pl_lengths = tf.sqrt(tf.reduce_mean(tf.reduce_sum(tf.square(pl_grads), axis=2), axis=1))
 
@@ -133,7 +133,7 @@ def stylegan2(G, D, aug, fake_labels, real_images, real_labels, r1_gamma=10, pl_
             with tf.control_dependencies(None):
                 pl_mean_var = tf.Variable(name='pl_mean', trainable=False, initial_value=0, dtype=tf.float32)
             pl_mean = pl_mean_var + pl_decay * (tf.reduce_mean(pl_lengths) - pl_mean_var)
-            pl_update = tf.assign(pl_mean_var, pl_mean)
+            pl_update = tf.compat.v1.assign(pl_mean_var, pl_mean)
 
             # Calculate (|J*y|-a)^2.
             with tf.control_dependencies([pl_update]):
@@ -168,13 +168,13 @@ def cmethods(G, D, aug, fake_labels, real_images, real_labels,
 ):
     # Evaluate networks for the main loss.
     minibatch_size = tf.shape(fake_labels)[0]
-    fake_latents = tf.random_normal([minibatch_size] + G.input_shapes[0][1:])
+    fake_latents = tf.random.normal([minibatch_size] + G.input_shapes[0][1:])
     G_fake = eval_G(G, fake_latents, fake_labels)
     D_fake = eval_D(D, aug, G_fake.images, fake_labels, report='fake')
     D_real = eval_D(D, aug, real_images, real_labels, report='real')
 
     # Non-saturating logistic loss from "Generative Adversarial Nets".
-    with tf.name_scope('Loss_main'):
+    with tf.compat.v1.name_scope('Loss_main'):
         G_loss = tf.nn.softplus(-D_fake.scores) # -log(sigmoid(D_fake.scores)), pylint: disable=invalid-unary-operand-type
         D_loss = tf.nn.softplus(D_fake.scores) # -log(1 - sigmoid(D_fake.scores))
         D_loss += tf.nn.softplus(-D_real.scores) # -log(sigmoid(D_real.scores)), pylint: disable=invalid-unary-operand-type
@@ -183,7 +183,7 @@ def cmethods(G, D, aug, fake_labels, real_images, real_labels,
 
     # R1 and R2 regularizers from "Which Training Methods for GANs do actually Converge?".
     if r1_gamma != 0 or r2_gamma != 0:
-        with tf.name_scope('Loss_R1R2'):
+        with tf.compat.v1.name_scope('Loss_R1R2'):
             if r1_gamma != 0:
                 r1_grads = tf.gradients(tf.reduce_sum(D_real.scores), [real_images])[0]
                 r1_penalty = tf.reduce_sum(tf.square(r1_grads), axis=[1,2,3])
@@ -197,18 +197,18 @@ def cmethods(G, D, aug, fake_labels, real_images, real_labels,
 
     # Path length regularizer from "Analyzing and Improving the Image Quality of StyleGAN".
     if pl_weight != 0:
-        with tf.name_scope('Loss_PL'):
+        with tf.compat.v1.name_scope('Loss_PL'):
             pl_minibatch_size = minibatch_size // pl_minibatch_shrink
             pl_latents = fake_latents[:pl_minibatch_size]
             pl_labels = fake_labels[:pl_minibatch_size]
             G_pl = eval_G(G, pl_latents, pl_labels, return_dlatents=True)
-            pl_noise = tf.random_normal(tf.shape(G_pl.images)) / np.sqrt(np.prod(G.output_shape[2:]))
+            pl_noise = tf.random.normal(tf.shape(G_pl.images)) / np.sqrt(np.prod(G.output_shape[2:]))
             pl_grads = tf.gradients(tf.reduce_sum(G_pl.images * pl_noise), [G_pl.dlatents])[0]
             pl_lengths = tf.sqrt(tf.reduce_mean(tf.reduce_sum(tf.square(pl_grads), axis=2), axis=1))
             with tf.control_dependencies(None):
                 pl_mean_var = tf.Variable(name='pl_mean', trainable=False, initial_value=0, dtype=tf.float32)
             pl_mean = pl_mean_var + pl_decay * (tf.reduce_mean(pl_lengths) - pl_mean_var)
-            pl_update = tf.assign(pl_mean_var, pl_mean)
+            pl_update = tf.compat.v1.assign(pl_mean_var, pl_mean)
             with tf.control_dependencies([pl_update]):
                 pl_penalty = tf.square(pl_lengths - pl_mean)
                 pl_penalty = report_stat(aug, 'Loss/pl_penalty', pl_penalty)
@@ -216,7 +216,7 @@ def cmethods(G, D, aug, fake_labels, real_images, real_labels,
 
     # bCR regularizer from "Improved consistency regularization for GANs".
     if (bcr_real_weight != 0 or bcr_fake_weight != 0) and bcr_augment is not None:
-        with tf.name_scope('Loss_bCR'):
+        with tf.compat.v1.name_scope('Loss_bCR'):
             if bcr_real_weight != 0:
                 bcr_real_images, bcr_real_labels = dnnlib.util.call_func_by_name(D_real.images_aug, D_real.labels_aug, **bcr_augment)
                 D_bcr_real = eval_D(D, aug, bcr_real_images, bcr_real_labels, report='real_bcr', augment_inputs=False)
@@ -232,8 +232,8 @@ def cmethods(G, D, aug, fake_labels, real_images, real_labels,
 
     # zCR regularizer from "Improved consistency regularization for GANs".
     if zcr_gen_weight != 0 or zcr_dis_weight != 0:
-        with tf.name_scope('Loss_zCR'):
-            zcr_fake_latents = fake_latents + tf.random_normal([minibatch_size] + G.input_shapes[0][1:]) * zcr_noise_std
+        with tf.compat.v1.name_scope('Loss_zCR'):
+            zcr_fake_latents = fake_latents + tf.random.normal([minibatch_size] + G.input_shapes[0][1:]) * zcr_noise_std
             G_zcr = eval_G(G, zcr_fake_latents, fake_labels)
             if zcr_gen_weight > 0:
                 zcr_gen_penalty = -tf.reduce_mean(tf.square(G_fake.images - G_zcr.images), axis=[1,2,3])
@@ -247,23 +247,23 @@ def cmethods(G, D, aug, fake_labels, real_images, real_labels,
 
     # Auxiliary rotation loss from "Self-supervised GANs via auxiliary rotation loss".
     if auxrot_alpha != 0 or auxrot_beta != 0:
-        with tf.name_scope('Loss_AuxRot'):
+        with tf.compat.v1.name_scope('Loss_AuxRot'):
             idx = tf.range(minibatch_size * 4, dtype=tf.int32) // minibatch_size
             b0 = tf.logical_or(tf.equal(idx, 0), tf.equal(idx, 1))
             b1 = tf.logical_or(tf.equal(idx, 0), tf.equal(idx, 3))
             b2 = tf.logical_or(tf.equal(idx, 0), tf.equal(idx, 2))
             if auxrot_alpha != 0:
                 auxrot_fake = tf.tile(G_fake.images, [4, 1, 1, 1])
-                auxrot_fake = tf.where(b0, auxrot_fake, tf.reverse(auxrot_fake, [2]))
-                auxrot_fake = tf.where(b1, auxrot_fake, tf.reverse(auxrot_fake, [3]))
-                auxrot_fake = tf.where(b2, auxrot_fake, tf.transpose(auxrot_fake, [0, 1, 3, 2]))
+                auxrot_fake = tf.compat.v1.where(b0, auxrot_fake, tf.reverse(auxrot_fake, [2]))
+                auxrot_fake = tf.compat.v1.where(b1, auxrot_fake, tf.reverse(auxrot_fake, [3]))
+                auxrot_fake = tf.compat.v1.where(b2, auxrot_fake, tf.transpose(auxrot_fake, [0, 1, 3, 2]))
                 D_auxrot_fake = eval_D(D, aug, auxrot_fake, fake_labels, return_aux=4)
                 G_loss += tf.nn.sparse_softmax_cross_entropy_with_logits(labels=idx, logits=D_auxrot_fake.aux) * auxrot_alpha
             if auxrot_beta != 0:
                 auxrot_real = tf.tile(real_images, [4, 1, 1, 1])
-                auxrot_real = tf.where(b0, auxrot_real, tf.reverse(auxrot_real, [2]))
-                auxrot_real = tf.where(b1, auxrot_real, tf.reverse(auxrot_real, [3]))
-                auxrot_real = tf.where(b2, auxrot_real, tf.transpose(auxrot_real, [0, 1, 3, 2]))
+                auxrot_real = tf.compat.v1.where(b0, auxrot_real, tf.reverse(auxrot_real, [2]))
+                auxrot_real = tf.compat.v1.where(b1, auxrot_real, tf.reverse(auxrot_real, [3]))
+                auxrot_real = tf.compat.v1.where(b2, auxrot_real, tf.transpose(auxrot_real, [0, 1, 3, 2]))
                 D_auxrot_real = eval_D(D, aug, auxrot_real, real_labels, return_aux=4)
                 D_loss += tf.nn.sparse_softmax_cross_entropy_with_logits(labels=idx, logits=D_auxrot_real.aux) * auxrot_beta
 
@@ -275,24 +275,24 @@ def cmethods(G, D, aug, fake_labels, real_images, real_labels,
 
 def wgangp(G, D, aug, fake_labels, real_images, real_labels, wgan_epsilon=0.001, wgan_lambda=10, wgan_target=1, **_kwargs):
     minibatch_size = tf.shape(fake_labels)[0]
-    fake_latents = tf.random_normal([minibatch_size] + G.input_shapes[0][1:])
+    fake_latents = tf.random.normal([minibatch_size] + G.input_shapes[0][1:])
     G_fake = eval_G(G, fake_latents, fake_labels)
     D_fake = eval_D(D, aug, G_fake.images, fake_labels, report='fake')
     D_real = eval_D(D, aug, real_images, real_labels, report='real')
 
     # WGAN loss from "Wasserstein Generative Adversarial Networks".
-    with tf.name_scope('Loss_main'):
+    with tf.compat.v1.name_scope('Loss_main'):
         G_loss = -D_fake.scores # pylint: disable=invalid-unary-operand-type
         D_loss = D_fake.scores - D_real.scores
 
     # Epsilon penalty from "Progressive Growing of GANs for Improved Quality, Stability, and Variation"
-    with tf.name_scope('Loss_epsilon'):
+    with tf.compat.v1.name_scope('Loss_epsilon'):
         epsilon_penalty = report_stat(aug, 'Loss/epsilon_penalty', tf.square(D_real.scores))
         D_loss += epsilon_penalty * wgan_epsilon
 
     # Gradient penalty from "Improved Training of Wasserstein GANs".
-    with tf.name_scope('Loss_GP'):
-        mix_factors = tf.random_uniform([minibatch_size, 1, 1, 1], 0, 1, dtype=G_fake.images.dtype)
+    with tf.compat.v1.name_scope('Loss_GP'):
+        mix_factors = tf.random.uniform([minibatch_size, 1, 1, 1], 0, 1, dtype=G_fake.images.dtype)
         mix_images = tflib.lerp(tf.cast(real_images, G_fake.images.dtype), G_fake.images, mix_factors)
         mix_labels = real_labels # NOTE: Mixing is performed without respect to fake_labels.
         D_mix = eval_D(D, aug, mix_images, mix_labels, report='mix')

@@ -96,7 +96,7 @@ def _upfirdn_2d_ref(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
     x = tf.reshape(x, [-1, 1, inH * upy + pady0 + pady1, inW * upx + padx0 + padx1])
     w = tf.constant(k[::-1, ::-1, np.newaxis, np.newaxis], dtype=x.dtype)
     x = tf.transpose(x, [0, 2, 3, 1])
-    x = tf.nn.conv2d(x, w, strides=[1,1,1,1], padding='VALID', data_format='NHWC')
+    x = tf.nn.conv2d(x, filters=w, strides=[1,1,1,1], padding='VALID', data_format='NHWC')
     x = tf.transpose(x, [0, 3, 1, 2])
     x = tf.reshape(x, [-1, minorDim, inH * upy + pady0 + pady1 - kernelH + 1, inW * upx + padx0 + padx1 - kernelW + 1])
     x = tf.transpose(x, [0, 2, 3, 1])
@@ -283,7 +283,7 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
 
     # Fast path for 1x1 convolution.
     if cw == 1 and ch == 1:
-        x = tf.nn.conv2d(x, w, data_format="NHWC", strides=[1,1,1,1], padding='VALID')
+        x = tf.nn.conv2d(x, filters=w, data_format="NHWC", strides=[1,1,1,1], padding='VALID')
         x = tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
         x = upsample_2d(x, k, factor=factor, gain=gain, padding=padding, data_format=data_format, impl=impl)
         return x
@@ -347,7 +347,7 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     if cw == 1 and ch == 1:
         x = downsample_2d(x, k, factor=factor, gain=gain, padding=padding, data_format=data_format, impl=impl)
         x = tf.transpose(x, [0,2,3,1]) if data_format == 'NCHW' else x
-        x = tf.nn.conv2d(x, w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
+        x = tf.nn.conv2d(x, filters=w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
         x = tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
         return x
 
@@ -366,7 +366,7 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     pad1 = (k.w - factor + cw - 1) // 2 + padding * factor
     x = _simple_upfirdn_2d(x, k, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
     x = tf.transpose(x, [0,2,3,1]) if data_format == 'NCHW' else x
-    x = tf.nn.conv2d(x, w, strides=s, padding='VALID', data_format=data_format)
+    x = tf.nn.conv2d(x, filters=w, strides=s, padding='VALID', data_format=data_format)
     return tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
 
 #----------------------------------------------------------------------------

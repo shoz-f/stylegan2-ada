@@ -36,8 +36,8 @@ def get_weight(shape, gain=1, equalized_lr=True, lrmul=1, weight_var='weight', t
         runtime_coef = lrmul
 
     # Create variable.
-    init = tf.initializers.random_normal(0, init_std)
-    w = tf.get_variable(weight_var, shape=shape, initializer=init, trainable=trainable) * runtime_coef
+    init = tf.compat.v1.initializers.random_normal(0, init_std)
+    w = tf.compat.v1.get_variable(weight_var, shape=shape, initializer=init, trainable=trainable) * runtime_coef
     if use_spectral_norm:
         w = apply_spectral_norm(w, state_var=weight_var+'_sn')
     return w
@@ -46,7 +46,7 @@ def get_weight(shape, gain=1, equalized_lr=True, lrmul=1, weight_var='weight', t
 # Bias and activation function.
 
 def apply_bias_act(x, act='linear', gain=None, lrmul=1, clamp=None, bias_var='bias', trainable=True):
-    b = tf.get_variable(bias_var, shape=[x.shape[1]], initializer=tf.initializers.zeros(), trainable=trainable) * lrmul
+    b = tf.compat.v1.get_variable(bias_var, shape=[x.shape[1]], initializer=tf.compat.v1.initializers.zeros(), trainable=trainable) * lrmul
     return fused_bias_act(x, b=tf.cast(b, x.dtype), act=act, gain=gain, clamp=clamp)
 
 #----------------------------------------------------------------------------
@@ -76,7 +76,7 @@ def conv2d(x, w, up=False, down=False, resample_kernel=None, padding=0):
     else:
         padding_mode = {0: 'SAME', -(kernel // 2): 'VALID'}[padding]
         x = tf.transpose(x, [0, 2, 3, 1])
-        x = tf.nn.conv2d(x, w, data_format='NHWC', strides=[1,1,1,1], padding=padding_mode)
+        x = tf.nn.conv2d(x, filters=w, data_format='NHWC', strides=[1,1,1,1], padding=padding_mode)
         x = tf.transpose(x, [0, 3, 1, 2])
     return x
 
@@ -111,7 +111,7 @@ def modulated_conv2d_layer(x, y, fmaps, kernel, up=False, down=False, demodulate
 
     # Demodulate.
     if demodulate:
-        d = tf.rsqrt(tf.reduce_sum(tf.square(ww), axis=[1,2,3]) + 1e-8) # [BO] Scaling factor.
+        d = tf.math.rsqrt(tf.reduce_sum(tf.square(ww), axis=[1,2,3]) + 1e-8) # [BO] Scaling factor.
         ww *= d[:, np.newaxis, np.newaxis, np.newaxis, :] # [BkkIO] Scale output feature maps.
 
     # Reshape/scale input.
@@ -135,7 +135,7 @@ def modulated_conv2d_layer(x, y, fmaps, kernel, up=False, down=False, demodulate
 # Normalize 2nd raw moment of the given activation tensor along specified axes.
 
 def normalize_2nd_moment(x, axis=1, eps=1e-8):
-    return x * tf.rsqrt(tf.reduce_mean(tf.square(x), axis=axis, keepdims=True) + eps)
+    return x * tf.math.rsqrt(tf.reduce_mean(tf.square(x), axis=axis, keepdims=True) + eps)
 
 #----------------------------------------------------------------------------
 # Minibatch standard deviation layer from the paper
@@ -170,17 +170,17 @@ def minibatch_stddev_layer(x, group_size=None, num_new_features=1):
 def apply_spectral_norm(w, state_var='sn', iterations=1, eps=1e-8):
     fmaps = w.shape[-1].value
     w_mat = tf.reshape(w, [-1, fmaps])
-    u_var = tf.get_variable(state_var, shape=[1,fmaps], initializer=tf.initializers.random_normal(), trainable=False)
+    u_var = tf.compat.v1.get_variable(state_var, shape=[1,fmaps], initializer=tf.compat.v1.initializers.random_normal(), trainable=False)
 
     u = u_var
     for _ in range(iterations):
         v = tf.matmul(u, w_mat, transpose_b=True)
-        v *= tf.rsqrt(tf.reduce_sum(tf.square(v)) + eps)
+        v *= tf.math.rsqrt(tf.reduce_sum(tf.square(v)) + eps)
         u = tf.matmul(v, w_mat)
-        sigma_inv = tf.rsqrt(tf.reduce_sum(tf.square(u)) + eps)
+        sigma_inv = tf.math.rsqrt(tf.reduce_sum(tf.square(u)) + eps)
         u *= sigma_inv
 
-    with tf.control_dependencies([tf.assign(u_var, u)]):
+    with tf.control_dependencies([tf.compat.v1.assign(u_var, u)]):
         return w * sigma_inv
 
 #----------------------------------------------------------------------------
@@ -240,36 +240,36 @@ def G_main(
     dlatents = tf.cast(dlatents, tf.float32)
 
     # Update moving average of W.
-    dlatent_avg = tf.get_variable('dlatent_avg', shape=[dlatent_size], initializer=tf.initializers.zeros(), trainable=False)
+    dlatent_avg = tf.compat.v1.get_variable('dlatent_avg', shape=[dlatent_size], initializer=tf.compat.v1.initializers.zeros(), trainable=False)
     if dlatent_avg_beta is not None:
-        with tf.variable_scope('DlatentAvg'):
+        with tf.compat.v1.variable_scope('DlatentAvg'):
             batch_avg = tf.reduce_mean(dlatents[:, 0], axis=0)
-            update_op = tf.assign(dlatent_avg, tflib.lerp(batch_avg, dlatent_avg, dlatent_avg_beta))
+            update_op = tf.compat.v1.assign(dlatent_avg, tflib.lerp(batch_avg, dlatent_avg, dlatent_avg_beta))
             with tf.control_dependencies([update_op]):
                 dlatents = tf.identity(dlatents)
 
     # Perform style mixing regularization.
     if style_mixing_prob is not None:
-        with tf.variable_scope('StyleMix'):
-            latents2 = tf.random_normal(tf.shape(latents_in))
+        with tf.compat.v1.variable_scope('StyleMix'):
+            latents2 = tf.random.normal(tf.shape(latents_in))
             dlatents2 = components.mapping.get_output_for(latents2, labels_in, is_training=is_training, **kwargs)
             dlatents2 = tf.cast(dlatents2, tf.float32)
             layer_idx = np.arange(num_layers)[np.newaxis, :, np.newaxis]
             mixing_cutoff = tf.cond(
-                tf.random_uniform([], 0.0, 1.0) < style_mixing_prob,
-                lambda: tf.random_uniform([], 1, num_layers, dtype=tf.int32),
+                tf.random.uniform([], 0.0, 1.0) < style_mixing_prob,
+                lambda: tf.random.uniform([], 1, num_layers, dtype=tf.int32),
                 lambda: num_layers)
-            dlatents = tf.where(tf.broadcast_to(layer_idx < mixing_cutoff, tf.shape(dlatents)), dlatents, dlatents2)
+            dlatents = tf.compat.v1.where(tf.broadcast_to(layer_idx < mixing_cutoff, tf.shape(dlatents)), dlatents, dlatents2)
 
     # Apply truncation.
     if truncation_psi is not None:
-        with tf.variable_scope('Truncation'):
+        with tf.compat.v1.variable_scope('Truncation'):
             layer_idx = np.arange(num_layers)[np.newaxis, :, np.newaxis]
             layer_psi = np.ones(layer_idx.shape, dtype=np.float32)
             if truncation_cutoff is None:
                 layer_psi *= truncation_psi
             else:
-                layer_psi = tf.where(layer_idx < truncation_cutoff, layer_psi * truncation_psi, layer_psi)
+                layer_psi = tf.compat.v1.where(layer_idx < truncation_cutoff, layer_psi * truncation_psi, layer_psi)
             dlatents = tflib.lerp(dlatent_avg, dlatents, layer_psi)
 
     # Evaluate synthesis network.
@@ -312,12 +312,12 @@ def G_mapping(
 
     # Normalize latents.
     if normalize_latents:
-        with tf.variable_scope('Normalize'):
+        with tf.compat.v1.variable_scope('Normalize'):
             x = normalize_2nd_moment(x)
 
     # Embed labels, normalize, and concatenate with latents.
     if label_size > 0:
-        with tf.variable_scope('LabelEmbed'):
+        with tf.compat.v1.variable_scope('LabelEmbed'):
             fmaps = label_fmaps if label_fmaps is not None else latent_size
             y = labels_in
             y = apply_bias_act(dense_layer(y, fmaps=fmaps))
@@ -326,13 +326,13 @@ def G_mapping(
 
     # Mapping layers.
     for layer_idx in range(mapping_layers):
-        with tf.variable_scope(f'Dense{layer_idx}'):
+        with tf.compat.v1.variable_scope(f'Dense{layer_idx}'):
             fmaps = mapping_fmaps if mapping_fmaps is not None and layer_idx < mapping_layers - 1 else dlatent_size
             x = apply_bias_act(dense_layer(x, fmaps=fmaps, lrmul=mapping_lrmul), act=mapping_nonlinearity, lrmul=mapping_lrmul)
 
     # Broadcast.
     if dlatent_broadcast is not None:
-        with tf.variable_scope('Broadcast'):
+        with tf.compat.v1.variable_scope('Broadcast'):
             x = tf.tile(x[:, np.newaxis], [1, dlatent_broadcast, 1])
 
     # Output.
@@ -387,17 +387,17 @@ def G_synthesis(
         for layer_idx in range(num_layers - 1):
             res = (layer_idx + 5) // 2
             shape = [1, 1, 2**res, 2**res]
-            noise_inputs.append(tf.get_variable(f'noise{layer_idx}', shape=shape, initializer=tf.initializers.random_normal(), trainable=False))
+            noise_inputs.append(tf.compat.v1.get_variable(f'noise{layer_idx}', shape=shape, initializer=tf.compat.v1.initializers.random_normal(), trainable=False))
 
     # Single convolution layer with all the bells and whistles.
     def layer(x, layer_idx, fmaps, kernel, up=False):
         x = modulated_conv2d_layer(x, dlatents_in[:, layer_idx], fmaps=fmaps, kernel=kernel, up=up, resample_kernel=resample_kernel, fused_modconv=fused_modconv)
         if use_noise:
             if randomize_noise:
-                noise = tf.random_normal([tf.shape(x)[0], 1, x.shape[2], x.shape[3]], dtype=x.dtype)
+                noise = tf.random.normal([tf.shape(x)[0], 1, x.shape[2], x.shape[3]], dtype=x.dtype)
             else:
                 noise = tf.cast(noise_inputs[layer_idx], x.dtype)
-            noise_strength = tf.get_variable('noise_strength', shape=[], initializer=tf.initializers.zeros())
+            noise_strength = tf.compat.v1.get_variable('noise_strength', shape=[], initializer=tf.compat.v1.initializers.zeros())
             x += noise * tf.cast(noise_strength, x.dtype)
         return apply_bias_act(x, act=act, clamp=conv_clamp)
 
@@ -405,24 +405,24 @@ def G_synthesis(
     def block(x, res): # res = 3..resolution_log2
         x = tf.cast(x, 'float16' if res > resolution_log2 - num_fp16_res else dtype)
         t = x
-        with tf.variable_scope('Conv0_up'):
+        with tf.compat.v1.variable_scope('Conv0_up'):
             x = layer(x, layer_idx=res*2-5, fmaps=nf(res-1), kernel=3, up=True)
-        with tf.variable_scope('Conv1'):
+        with tf.compat.v1.variable_scope('Conv1'):
             x = layer(x, layer_idx=res*2-4, fmaps=nf(res-1), kernel=3)
         if architecture == 'resnet':
-            with tf.variable_scope('Skip'):
+            with tf.compat.v1.variable_scope('Skip'):
                 t = conv2d_layer(t, fmaps=nf(res-1), kernel=1, up=True, resample_kernel=resample_kernel)
                 x = (x + t) * (1 / np.sqrt(2))
         return x
 
     # Upsampling block.
     def upsample(y):
-        with tf.variable_scope('Upsample'):
+        with tf.compat.v1.variable_scope('Upsample'):
             return upsample_2d(y, k=resample_kernel)
 
     # ToRGB block.
     def torgb(x, y, res): # res = 2..resolution_log2
-        with tf.variable_scope('ToRGB'):
+        with tf.compat.v1.variable_scope('ToRGB'):
             t = modulated_conv2d_layer(x, dlatents_in[:, res*2-3], fmaps=num_channels, kernel=1, demodulate=False, fused_modconv=fused_modconv)
             t = apply_bias_act(t, clamp=conv_clamp)
             t = tf.cast(t, dtype)
@@ -432,19 +432,19 @@ def G_synthesis(
 
     # Layers for 4x4 resolution.
     y = None
-    with tf.variable_scope('4x4'):
-        with tf.variable_scope('Const'):
+    with tf.compat.v1.variable_scope('4x4'):
+        with tf.compat.v1.variable_scope('Const'):
             fmaps = fmap_const if fmap_const is not None else nf(1)
-            x = tf.get_variable('const', shape=[1, fmaps, 4, 4], initializer=tf.initializers.random_normal())
+            x = tf.compat.v1.get_variable('const', shape=[1, fmaps, 4, 4], initializer=tf.compat.v1.initializers.random_normal())
             x = tf.tile(tf.cast(x, dtype), [tf.shape(dlatents_in)[0], 1, 1, 1])
-        with tf.variable_scope('Conv'):
+        with tf.compat.v1.variable_scope('Conv'):
             x = layer(x, layer_idx=0, fmaps=nf(1), kernel=3)
         if architecture == 'skip':
             y = torgb(x, y, 2)
 
     # Layers for >=8x8 resolutions.
     for res in range(3, resolution_log2 + 1):
-        with tf.variable_scope(f'{2**res}x{2**res}'):
+        with tf.compat.v1.variable_scope(f'{2**res}x{2**res}'):
             x = block(x, res)
             if architecture == 'skip':
                 y = upsample(y)
@@ -516,11 +516,11 @@ def D_main(
     # Label embedding and mapping.
     if label_size > 0:
         y = labels_in
-        with tf.variable_scope('LabelEmbed'):
+        with tf.compat.v1.variable_scope('LabelEmbed'):
             y = apply_bias_act(dense_layer(y, fmaps=mapping_fmaps))
             y = normalize_2nd_moment(y)
         for idx in range(mapping_layers):
-            with tf.variable_scope(f'Mapping{idx}'):
+            with tf.compat.v1.variable_scope(f'Mapping{idx}'):
                 y = apply_bias_act(dense_layer(y, fmaps=mapping_fmaps, lrmul=mapping_lrmul), act=act, lrmul=mapping_lrmul)
         labels_in = y
 
@@ -528,7 +528,7 @@ def D_main(
     def adrop(x):
         if adaptive_dropout != 0:
             s = [tf.shape(x)[0], x.shape[1]] + [1] * (x.shape.rank - 2)
-            x *= tf.cast(tf.exp(tf.random_normal(s) * (augment_strength * adaptive_dropout)), x.dtype)
+            x *= tf.cast(tf.exp(tf.random.normal(s) * (augment_strength * adaptive_dropout)), x.dtype)
         return x
 
     # Freeze-D.
@@ -543,22 +543,22 @@ def D_main(
     pagan_bits = None
     pagan_signs = None
     if use_pagan:
-        with tf.variable_scope('PAGAN'):
+        with tf.compat.v1.variable_scope('PAGAN'):
             idx = tf.range(pagan_num, dtype=tf.float32)
             active = (augment_strength * pagan_num - idx - 1) / max(pagan_fade, 1e-8) + 1
             prob = tf.clip_by_value(active[np.newaxis, :], 0, 1) * 0.5
-            rnd = tf.random_uniform([tf.shape(images_in)[0], pagan_num])
+            rnd = tf.random.uniform([tf.shape(images_in)[0], pagan_num])
             pagan_bits = tf.cast(rnd < prob, dtype=tf.float32)
             pagan_signs = tf.reduce_prod(1 - pagan_bits * 2, axis=1, keepdims=True)
 
     # FromRGB block.
     def fromrgb(x, y, res): # res = 2..resolution_log2
-        with tf.variable_scope('FromRGB'):
+        with tf.compat.v1.variable_scope('FromRGB'):
             trainable = is_next_layer_trainable()
             t = tf.cast(y, 'float16' if res > resolution_log2 - num_fp16_res else dtype)
             t = adrop(conv2d_layer(t, fmaps=nf(res-1), kernel=1, trainable=trainable))
             if pagan_bits is not None:
-                with tf.variable_scope('PAGAN'):
+                with tf.compat.v1.variable_scope('PAGAN'):
                     t += dense_layer(tf.cast(pagan_bits, t.dtype), fmaps=nf(res-1), trainable=trainable)[:, :, np.newaxis, np.newaxis]
             t = apply_bias_act(t, act=act, clamp=conv_clamp, trainable=trainable)
             if x is not None:
@@ -569,14 +569,14 @@ def D_main(
     def block(x, res): # res = 2..resolution_log2
         x = tf.cast(x, 'float16' if res > resolution_log2 - num_fp16_res else dtype)
         t = x
-        with tf.variable_scope('Conv0'):
+        with tf.compat.v1.variable_scope('Conv0'):
             trainable = is_next_layer_trainable()
             x = apply_bias_act(adrop(conv2d_layer(x, fmaps=nf(res-1), kernel=3, trainable=trainable, use_spectral_norm=use_spectral_norm)), act=act, clamp=conv_clamp, trainable=trainable)
-        with tf.variable_scope('Conv1_down'):
+        with tf.compat.v1.variable_scope('Conv1_down'):
             trainable = is_next_layer_trainable()
             x = apply_bias_act(adrop(conv2d_layer(x, fmaps=nf(res-2), kernel=3, down=True, resample_kernel=resample_kernel, trainable=trainable, use_spectral_norm=use_spectral_norm)), act=act, clamp=conv_clamp, trainable=trainable)
         if architecture == 'resnet':
-            with tf.variable_scope('Skip'):
+            with tf.compat.v1.variable_scope('Skip'):
                 trainable = is_next_layer_trainable()
                 t = adrop(conv2d_layer(t, fmaps=nf(res-2), kernel=1, down=True, resample_kernel=resample_kernel, trainable=trainable))
                 x = (x + t) * (1 / np.sqrt(2))
@@ -584,14 +584,14 @@ def D_main(
 
     # Downsampling block.
     def downsample(y):
-        with tf.variable_scope('Downsample'):
+        with tf.compat.v1.variable_scope('Downsample'):
             return downsample_2d(y, k=resample_kernel)
 
     # Layers for >=8x8 resolutions.
     x = None
     y = images_in
     for res in range(resolution_log2, 2, -1):
-        with tf.variable_scope(f'{2**res}x{2**res}'):
+        with tf.compat.v1.variable_scope(f'{2**res}x{2**res}'):
             if architecture == 'skip' or res == resolution_log2:
                 x = fromrgb(x, y, res)
             x = block(x, res)
@@ -599,22 +599,22 @@ def D_main(
                 y = downsample(y)
 
     # Layers for 4x4 resolution.
-    with tf.variable_scope('4x4'):
+    with tf.compat.v1.variable_scope('4x4'):
         if architecture == 'skip':
             x = fromrgb(x, y, 2)
         x = tf.cast(x, dtype)
         if mbstd_num_features > 0:
-            with tf.variable_scope('MinibatchStddev'):
+            with tf.compat.v1.variable_scope('MinibatchStddev'):
                 x = minibatch_stddev_layer(x, mbstd_group_size, mbstd_num_features)
-        with tf.variable_scope('Conv'):
+        with tf.compat.v1.variable_scope('Conv'):
             trainable = is_next_layer_trainable()
             x = apply_bias_act(adrop(conv2d_layer(x, fmaps=nf(1), kernel=3, trainable=trainable, use_spectral_norm=use_spectral_norm)), act=act, clamp=conv_clamp, trainable=trainable)
-        with tf.variable_scope('Dense0'):
+        with tf.compat.v1.variable_scope('Dense0'):
             trainable = is_next_layer_trainable()
             x = apply_bias_act(adrop(dense_layer(x, fmaps=nf(0), trainable=trainable)), act=act, trainable=trainable)
 
     # Output layer (always trainable).
-    with tf.variable_scope('Output'):
+    with tf.compat.v1.variable_scope('Output'):
         if label_size > 0:
             assert score_max == 1
             x = apply_bias_act(dense_layer(x, fmaps=mapping_fmaps))
