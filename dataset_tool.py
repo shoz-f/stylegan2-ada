@@ -573,7 +573,12 @@ def create_lsun(tfrecord_dir, lmdb_dir, resolution=256, max_images=None):
                     except IOError:
                         img = np.asarray(PIL.Image.open(io.BytesIO(value)))
                     crop = np.min(img.shape[:2])
-                    img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
+                    a = (img.shape[0] - crop) // 2
+                    b = (img.shape[0] + crop) // 2
+                    c = (img.shape[1] - crop) // 2
+                    d = (img.shape[1] + crop) // 2
+                    img = img[a:b, c:d]
+                    #img = img[((img.shape[0] - crop) // 2) : ((img.shape[0] + crop) // 2), ((img.shape[0] - crop) // 2) : ((img.shape[1] + crop) // 2)]
                     img = PIL.Image.fromarray(img, 'RGB')
                     img = img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
                     img = np.asarray(img)
