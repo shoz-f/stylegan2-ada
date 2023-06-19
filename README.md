@@ -1,3 +1,7 @@
+## StyleGAN2 ADA converted for Tensorflow v2
+
+The `tf2` branch contains code converted with 'tf_upgrade_v2'. Right now, image generation by `generate2.py` is available.
+
 ## StyleGAN2 with adaptive discriminator augmentation (ADA)<br>&mdash; Official TensorFlow implementation
 
 ![Teaser image](./docs/stylegan2-ada-teaser-1024x252.png)
