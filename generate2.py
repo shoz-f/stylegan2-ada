@@ -16,12 +16,13 @@ import re
 import numpy as np
 import PIL.Image
 
+import tensorflow.compat.v1 as tf
+tf.logging.set_verbosity(tf.logging.ERROR)
+tf.disable_v2_behavior()
+
 import dnnlib
 import dnnlib.tflib as tflib
-
-#import tensorflow as tf
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+tflib.init_tf()
 
 #----------------------------------------------------------------------------
 
@@ -29,7 +30,6 @@ def generate_images(network_pkl, seeds, truncation_psi, outdir, class_idx, dlate
     os.makedirs(outdir, exist_ok=True)
 
     # Load networks
-    tflib.init_tf()
     print('Loading networks from "%s"...' % network_pkl)
     with dnnlib.util.open_url(network_pkl) as fp:
         _G, _D, rGs = pickle.load(fp)
