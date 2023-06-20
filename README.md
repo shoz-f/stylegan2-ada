@@ -2,6 +2,18 @@
 
 The `tf2` branch contains code converted with 'tf_upgrade_v2'. Right now, you can generate images by `generate2.py` under the CPU.
 
+## Model converter
+
+There are 2 converters:
+* pkl2savedmodel.py: convert from pickled model to savedmodel.
+* export_tflite.py: convert from savedmodel to tflite (select a signature from [serving_default, mapping, synthesis]).
+
+## Reference
+* StyleGAN2による画像生成をCPU環境/TensorFlow.jsで動かす
+https://memo.sugyan.com/entry/2020/02/06/005441
+
+---
+
 ## StyleGAN2 with adaptive discriminator augmentation (ADA)<br>&mdash; Official TensorFlow implementation
 
 ![Teaser image](./docs/stylegan2-ada-teaser-1024x252.png)
