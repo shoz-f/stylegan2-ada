@@ -1,94 +1,102 @@
+#!/usr/local/bin/python
+# -*- coding: utf-8 -*-
+################################################################################
+# pkl2savedmodel.py
+# Description:  converter pickle to savedmodel
+#
+# Author:       shozo fukuda
+# Date:         Tue Jun 20 10:14:58 2023
+# Last revised: $Date$
+# Application:  Python 3
+################################################################################
+
+#<IMPORT>
+import os
+import shutil
 import argparse
-import pathlib
 import pickle
 
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+#<SUBROUTINE>###################################################################
+# Function:     convert pickle to savedmodel
+# Description:  
+# Dependencies: 
+################################################################################
+def to_savedmodel(pkl, outdir):
+    # Load pretrained networks
+    print('Loading networks from "%s"...' % pkl)
+    with dnnlib.util.open_url(pkl) as fp:
+        _G, _D, rGs = pickle.load(fp)
 
-from dnnlib.tflib.network import Network
-from dnnlib.util import EasyDict
+    # Config for saved_model
+    Gs_args = rGs.static_kwargs.copy()
+    Gs_args['num_fp16_res']    = 0
+    Gs_args['randomize_noise'] = False
+    Gs_args['return_dlatents'] = True
 
-
-def convert(
-    network_pkl: pathlib.Path, save_dir: pathlib.Path, res: int, truncation_psi: float,
-) -> None:
-    with tf.compat.v1.Session() as sess:
-        spec = EasyDict(map=2, fmaps=1 if res >= 512 else 0.5)
-        G_args = EasyDict(
+#    with tf.Graph().as_default(), tflib.create_session(force_as_default=True) as sess:
+    with tflib.create_session(force_as_default=True) as sess:
+        # Construct network
+        Gs = tflib.Network(
+            "Gs",
             func_name="training.networks.G_main",
-            fmap_base=int(spec.fmaps * 16384),
-            mapping_layers=spec.map,
-        )
-        G = Network(
-            "G",
-            num_channels=3,
-            resolution=res,
-            use_noise=False,
-            return_dlatents=True,
-            truncation_psi=truncation_psi,
-            **G_args,
-        )
-        Gs = G.clone("Gs")
-        with open(str(network_pkl.resolve()), "rb") as fp:
-            _, _, rGs = pickle.load(fp)
+            **Gs_args)
         Gs.copy_vars_from(rGs)
 
-        input_names = [t.name for t in Gs.input_templates]
-        output_names = [t.name for t in Gs.output_templates]
-        graph_def = tf.compat.v1.graph_util.convert_variables_to_constants(
-            sess, sess.graph.as_graph_def(), [t.op.name for t in Gs.output_templates]
-        )
+        # Get inputs/outputs
+        [latents, _labels] = Gs.input_templates
+        [images, dlatents] = Gs.output_templates
 
-    with tf.Graph().as_default() as graph:
-        tf.import_graph_def(graph_def, name="")
-        inputs = [graph.get_tensor_by_name(input_names[0])]
-        outputs = [graph.get_tensor_by_name(name) for name in output_names]
-        images = tf.transpose(outputs[0], [0, 2, 3, 1])
-        images = tf.saturate_cast((images + 1.0) * 127.5, tf.uint8)
-
-        builder = tf.compat.v1.saved_model.Builder(str(save_dir.resolve()))
-        default = tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY
-        signature_def_map = {
-            default: tf.compat.v1.saved_model.build_signature_def(
-                {"latents": tf.compat.v1.saved_model.utils.build_tensor_info(inputs[0])},
-                {"images": tf.compat.v1.saved_model.utils.build_tensor_info(images)},
-            ),
-            "mapping": tf.compat.v1.saved_model.build_signature_def(
-                {"latents": tf.compat.v1.saved_model.utils.build_tensor_info(inputs[0])},
-                {"dlatents": tf.compat.v1.saved_model.utils.build_tensor_info(outputs[1])},
-            ),
-            "synthesis": tf.compat.v1.saved_model.build_signature_def(
-                {"dlatents": tf.compat.v1.saved_model.utils.build_tensor_info(outputs[1])},
-                {"images": tf.compat.v1.saved_model.utils.build_tensor_info(images)},
-            ),
-        }
+        # Save as saved_model
+        builder = tf1.saved_model.Builder(outdir)
         builder.add_meta_graph_and_variables(
-            sess, [tf.saved_model.SERVING], signature_def_map
-        )
+            sess,
+            tags=["serve"],
+            signature_def_map={
+                tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY: tf1.saved_model.predict_signature_def(
+                    inputs={"latents": latents},
+                    outputs={"images":  images}),
+                "mapping": tf1.saved_model.predict_signature_def(
+                    inputs={"latents": latents},
+                    outputs={"dlatents": dlatents}),
+                "synthesis": tf1.saved_model.predict_signature_def(
+                    inputs={"dlatents": dlatents},
+                    outputs={"images": images})
+            })
+
+        print("Saving as SavedModel: %s" %(outdir))
         builder.save()
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("network_pkl", type=pathlib.Path)
-    parser.add_argument("save_dir", type=pathlib.Path)
-    parser.add_argument(
-        "--res",
-        help="Dataset resolution (default: 256)",
-        type=int,
-        metavar="INT",
-        default=256,
-    )
-    parser.add_argument(
-        "--trunc",
-        dest="truncation_psi",
-        type=float,
-        help="Truncation psi (default: %(default)s)",
-        default=0.5,
-    )
+#<TEST>#########################################################################
+# Function:     command line
+# Description:  
+# Dependencies: 
+################################################################################
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Convert pretrained pickle to savedmodel")
+    parser.add_argument('pkl', help="pickle file")
+    parser.add_argument('outdir', help="saved_model direcotry")
+    parser.add_argument('-f', '--force', action='store_true',
+        help="remove outdir if existed")
     args = parser.parse_args()
 
-    if args.save_dir.exists():
-        raise FileExistsError(args.save_dir.resolve())
-    else:
-        convert(**vars(args))
+    if args.force:
+        shutil.rmtree(args.outdir, ignore_errors=True)
+    elif os.path.isdir(args.outdir):
+        print("Error: directory '%s' is already exist." %(args.outdir))
+        exit()
+
+    # Setup Tensorflow for legacy v1
+    import tensorflow as tf
+    import tensorflow.compat.v1 as tf1
+    tf1.logging.set_verbosity(tf1.logging.ERROR)
+    tf1.disable_v2_behavior()
+    tf1.enable_resource_variables()
+
+    import dnnlib
+    import dnnlib.tflib as tflib
+    tflib.init_tf()
+
+    # Convert
+    to_savedmodel(args.pkl, args.outdir)
+
+# pkl2savedmodel.py
