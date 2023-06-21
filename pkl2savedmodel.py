@@ -86,6 +86,7 @@ if __name__ == '__main__':
         exit()
 
     # Setup Tensorflow for legacy v1
+    print("Setup Tensorflow...")
     import tensorflow as tf
     import tensorflow.compat.v1 as tf1
     tf1.logging.set_verbosity(tf1.logging.ERROR)

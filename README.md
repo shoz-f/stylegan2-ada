@@ -8,6 +8,14 @@ There are 2 converters:
 * pkl2savedmodel.py: convert from pickled model to savedmodel.
 * export_tflite.py: convert from savedmodel to tflite (select a signature from [serving_default, mapping, synthesis]).
 
+```.bash
+# Convert pickle to savedmodel
+python pkl2savedmodel.py https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada/pretrained/afhqdog.pkl afhqdog
+
+# Convert savedmodel to tflite [signature: serving_default]
+python export_tflite.py afhqdog
+```
+
 ## Reference
 * StyleGAN2による画像生成をCPU環境/TensorFlow.jsで動かす
 https://memo.sugyan.com/entry/2020/02/06/005441
