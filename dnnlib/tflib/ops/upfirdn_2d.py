@@ -11,14 +11,14 @@
 import os
 import numpy as np
 import tensorflow as tf
-from .. import custom_ops
+from .. import custom_ops, which_impl
 
 def _get_plugin():
     return custom_ops.get_plugin(os.path.splitext(__file__)[0] + '.cu')
 
 #----------------------------------------------------------------------------
 
-def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, pady1=0, impl='ref'):
+def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, pady1=0, impl=None):
     r"""Pad, upsample, FIR filter, and downsample a batch of 2D images.
 
     Accepts a batch of 2D images of the shape `[majorDim, inH, inW, minorDim]`
@@ -61,6 +61,7 @@ def upfirdn_2d(x, k, upx=1, upy=1, downx=1, downy=1, padx0=0, padx1=0, pady0=0, 
         'ref':  _upfirdn_2d_ref,
         'cuda': _upfirdn_2d_cuda,
     }
+    impl = which_impl(impl)
     return impl_dict[impl](x=x, k=k, upx=upx, upy=upy, downx=downx, downy=downy, padx0=padx0, padx1=padx1, pady0=pady0, pady1=pady1)
 
 #----------------------------------------------------------------------------
@@ -151,7 +152,7 @@ def _upfirdn_2d_cuda(x, k, upx, upy, downx, downy, padx0, padx1, pady0, pady1):
 
 #----------------------------------------------------------------------------
 
-def filter_2d(x, k, gain=1, padding=0, data_format='NCHW', impl='ref'):
+def filter_2d(x, k, gain=1, padding=0, data_format='NCHW', impl=None):
     r"""Filter a batch of 2D images with the given FIR filter.
 
     Accepts a batch of 2D images of the shape `[N, C, H, W]` or `[N, H, W, C]`
@@ -176,11 +177,11 @@ def filter_2d(x, k, gain=1, padding=0, data_format='NCHW', impl='ref'):
     assert k.w == k.h
     pad0 = k.w // 2 + padding
     pad1 = (k.w - 1) // 2 + padding
-    return _simple_upfirdn_2d(x, k, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
+    return _simple_upfirdn_2d(x, k, pad0=pad0, pad1=pad1, data_format=data_format, impl=whitch_impl(impl))
 
 #----------------------------------------------------------------------------
 
-def upsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
+def upsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl=None):
     r"""Upsample a batch of 2D images with the given filter.
 
     Accepts a batch of 2D images of the shape `[N, C, H, W]` or `[N, H, W, C]`
@@ -211,11 +212,11 @@ def upsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl
     assert k.w == k.h
     pad0 = (k.w + factor - 1) // 2 + padding
     pad1 = (k.w - factor) // 2 + padding
-    return _simple_upfirdn_2d(x, k, up=factor, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
+    return _simple_upfirdn_2d(x, k, up=factor, pad0=pad0, pad1=pad1, data_format=data_format, impl=which_impl(impl))
 
 #----------------------------------------------------------------------------
 
-def downsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
+def downsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl=None):
     r"""Downsample a batch of 2D images with the given filter.
 
     Accepts a batch of 2D images of the shape `[N, C, H, W]` or `[N, H, W, C]`
@@ -245,11 +246,11 @@ def downsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', im
     assert k.w == k.h
     pad0 = (k.w - factor + 1) // 2 + padding * factor
     pad1 = (k.w - factor) // 2 + padding * factor
-    return _simple_upfirdn_2d(x, k, down=factor, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
+    return _simple_upfirdn_2d(x, k, down=factor, pad0=pad0, pad1=pad1, data_format=data_format, impl=which_impl(impl))
 
 #----------------------------------------------------------------------------
 
-def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
+def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl=None):
     r"""Fused `upsample_2d()` followed by `tf.nn.conv2d()`.
 
     Padding is performed only once at the beginning, not between the operations.
@@ -276,6 +277,7 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
 
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
+    impl = which_impl(impl)
 
     # Check weight shape.
     w = tf.convert_to_tensor(w)
@@ -316,7 +318,7 @@ def upsample_conv_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCH
 
 #----------------------------------------------------------------------------
 
-def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl='ref'):
+def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl=None):
     r"""Fused `tf.nn.conv2d()` followed by `downsample_2d()`.
 
     Padding is performed only once at the beginning, not between the operations.
@@ -342,6 +344,7 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
 
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
+    impl = which_impl(impl)
 
     # Check weight shape.
     w = tf.convert_to_tensor(w)
@@ -401,10 +404,12 @@ class _FilterKernel:
             self.ky = None
             self.kxy = k * gain
 
-def _simple_upfirdn_2d(x, k, up=1, down=1, pad0=0, pad1=0, data_format='NCHW', impl='ref'):
+def _simple_upfirdn_2d(x, k, up=1, down=1, pad0=0, pad1=0, data_format='NCHW', impl=None):
     assert isinstance(k, _FilterKernel)
     assert data_format in ['NCHW', 'NHWC']
     assert x.shape.rank == 4
+    impl = which_impl(impl)
+
     y = x
     if data_format == 'NCHW':
         y = tf.reshape(y, [-1, _shape(y, 2), _shape(y, 3), 1])

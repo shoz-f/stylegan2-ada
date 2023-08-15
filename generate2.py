@@ -22,6 +22,7 @@ tf.disable_v2_behavior()
 
 import dnnlib
 import dnnlib.tflib as tflib
+tflib.set_impl('ref')
 tflib.init_tf()
 
 #----------------------------------------------------------------------------

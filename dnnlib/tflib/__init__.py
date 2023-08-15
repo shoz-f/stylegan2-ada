@@ -18,3 +18,14 @@ from .network import Network
 from .optimizer import Optimizer
 
 from .custom_ops import get_plugin
+
+# manage implement.
+default_impl = 'cuda'
+
+def set_impl(impl):
+    global default_impl
+    default_impl = impl
+
+def which_impl(impl):
+    global default_impl
+    return impl if impl != None else default_impl

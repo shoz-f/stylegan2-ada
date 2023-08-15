@@ -11,7 +11,7 @@
 import os
 import numpy as np
 import tensorflow as tf
-from .. import custom_ops
+from .. import custom_ops, which_impl
 from ...util import EasyDict
 
 def _get_plugin():
@@ -33,7 +33,7 @@ activation_funcs = {
 
 #----------------------------------------------------------------------------
 
-def fused_bias_act(x, b=None, axis=1, act='linear', alpha=None, gain=None, clamp=None, impl='ref'):
+def fused_bias_act(x, b=None, axis=1, act='linear', alpha=None, gain=None, clamp=None, impl=None):
     r"""Fused bias and activation function.
 
     Adds bias `b` to activation tensor `x`, evaluates activation function `act`,
@@ -69,6 +69,7 @@ def fused_bias_act(x, b=None, axis=1, act='linear', alpha=None, gain=None, clamp
         'ref':  _fused_bias_act_ref,
         'cuda': _fused_bias_act_cuda,
     }
+    impl = which_impl(impl)
     return impl_dict[impl](x=x, b=b, axis=axis, act=act, alpha=alpha, gain=gain, clamp=clamp)
 
 #----------------------------------------------------------------------------
