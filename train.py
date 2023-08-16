@@ -14,8 +14,11 @@ import argparse
 import json
 import re
 import tensorflow as tf
+tf.compat.v1.disable_v2_behavior()
+
 import dnnlib
 import dnnlib.tflib as tflib
+tflib.set_impl('ref')
 
 from training import training_loop
 from training import dataset

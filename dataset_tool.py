@@ -17,8 +17,12 @@ import six.moves.queue as Queue
 import traceback
 import numpy as np
 import tensorflow as tf
+tf.compat.v1.disable_v2_behavior()
+
 import PIL.Image
 import dnnlib.tflib as tflib
+tflib.set_impl('ref')
+
 import scipy
 import scipy.ndimage
 import scipy.misc

@@ -112,15 +112,15 @@ class TFRecordDataset:
         with tf.compat.v1.name_scope('Dataset'), tf.device('/cpu:0'), tf.control_dependencies(None):
             self._tf_minibatch_in = tf.compat.v1.placeholder(tf.int64, name='minibatch_in', shape=[])
             self._tf_labels_var = tflib.create_var_with_large_initial_value(self._np_labels, name='labels_var')
-            self._tf_labels_dataset = tf.data.Dataset.from_tensor_slices(self._tf_labels_var)
+            self._tf_labels_dataset = tf.compat.v1.data.Dataset.from_tensor_slices(self._tf_labels_var)
             for tfr_file, tfr_shape, tfr_lod in zip(tfr_files, tfr_shapes, tfr_lods):
                 if tfr_lod < 0:
                     continue
-                dset = tf.data.TFRecordDataset(tfr_file, compression_type='', buffer_size=buffer_mb<<20)
+                dset = tf.compat.v1.data.TFRecordDataset(tfr_file, compression_type='', buffer_size=buffer_mb<<20)
                 if max_images is not None:
                     dset = dset.take(max_images)
                 dset = dset.map(self.parse_tfrecord_tf, num_parallel_calls=num_threads)
-                dset = tf.data.Dataset.zip((dset, self._tf_labels_dataset))
+                dset = tf.compat.v1.data.Dataset.zip((dset, self._tf_labels_dataset))
                 bytes_per_item = np.prod(tfr_shape) * np.dtype(self.dtype).itemsize
                 if self.shuffle and shuffle_mb > 0:
                     dset = dset.shuffle(((shuffle_mb << 20) - 1) // bytes_per_item + 1)
