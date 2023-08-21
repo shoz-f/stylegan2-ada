@@ -205,11 +205,11 @@ def upsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', impl
         Tensor of the shape `[N, C, H * factor, W * factor]` or
         `[N, H * factor, W * factor, C]`, and same datatype as `x`.
     """
-
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
     k = _FilterKernel(k if k is not None else [1] * factor, gain * (factor ** 2))
     assert k.w == k.h
+
     pad0 = (k.w + factor - 1) // 2 + padding
     pad1 = (k.w - factor) // 2 + padding
     return _simple_upfirdn_2d(x, k, up=factor, pad0=pad0, pad1=pad1, data_format=data_format, impl=which_impl(impl))
@@ -239,11 +239,11 @@ def downsample_2d(x, k=None, factor=2, gain=1, padding=0, data_format='NCHW', im
         Tensor of the shape `[N, C, H // factor, W // factor]` or
         `[N, H // factor, W // factor, C]`, and same datatype as `x`.
     """
-
     assert isinstance(factor, int) and factor >= 1
     assert isinstance(padding, int)
     k = _FilterKernel(k if k is not None else [1] * factor, gain)
     assert k.w == k.h
+
     pad0 = (k.w - factor + 1) // 2 + padding * factor
     pad1 = (k.w - factor) // 2 + padding * factor
     return _simple_upfirdn_2d(x, k, down=factor, pad0=pad0, pad1=pad1, data_format=data_format, impl=which_impl(impl))
@@ -354,9 +354,7 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
     # Fast path for 1x1 convolution.
     if cw == 1 and ch == 1:
         x = downsample_2d(x, k, factor=factor, gain=gain, padding=padding, data_format=data_format, impl=impl)
-        x = tf.transpose(x, [0,2,3,1]) if data_format == 'NCHW' else x
         x = tf.nn.conv2d(x, filters=w, data_format=data_format, strides=[1,1,1,1], padding='VALID')
-        x = tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
         return x
 
     # Setup filter kernel.
@@ -368,14 +366,13 @@ def conv_downsample_2d(x, w, k=None, factor=2, gain=1, padding=0, data_format='N
         s = [1, 1, factor, factor]
     else:
         s = [1, factor, factor, 1]
+#    s = [1, factor, factor, 1]
 
     # Execute.
     pad0 = (k.w - factor + cw) // 2 + padding * factor
     pad1 = (k.w - factor + cw - 1) // 2 + padding * factor
     x = _simple_upfirdn_2d(x, k, pad0=pad0, pad1=pad1, data_format=data_format, impl=impl)
-    x = tf.transpose(x, [0,2,3,1]) if data_format == 'NCHW' else x
-    x = tf.nn.conv2d(x, filters=w, strides=s, padding='VALID', data_format=data_format)
-    return tf.transpose(x, [0,3,1,2]) if data_format == 'NCHW' else x
+    return tf.nn.conv2d(x, filters=w, strides=s, padding='VALID', data_format=data_format)
 
 #----------------------------------------------------------------------------
 # Internal helpers.
