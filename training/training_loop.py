@@ -117,8 +117,8 @@ def training_loop(
     print()
 
     print('Constructing networks...')
-    #with tf.device('/gpu:0'):
-    with tf.device('/cpu:0'):
+    with tf.device('/gpu:0'):
+    #with tf.device('/cpu:0'):
         G = tflib.Network('G', num_channels=training_set.shape[0], resolution=training_set.shape[1], label_size=training_set.label_size, **G_args)
         D = tflib.Network('D', num_channels=training_set.shape[0], resolution=training_set.shape[1], label_size=training_set.label_size, **D_args)
         Gs = G.clone('Gs')
